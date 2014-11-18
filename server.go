@@ -132,15 +132,13 @@ func (s *Server) observeLeaderChanges() {
 		if isLeader {
 			Debug("server: became raft leader")
 			s.resetTimer()
-			err := s.receiver.Start()
-			if err != nil {
+			if err := s.receiver.Start(); err != nil {
 				Fatal("server: error while starting receiver:", err)
 			}
 		} else {
 			Debug("server: lost raft leadership")
 			s.timer.Pause()
-			err := s.receiver.Pause()
-			if err != nil {
+			if err := s.receiver.Pause(); err != nil {
 				Fatal("server: error while starting receiver:", err)
 			}
 		}
