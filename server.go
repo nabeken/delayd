@@ -171,27 +171,22 @@ func (s *Server) timerSend(t time.Time) {
 		Fatal("server: could not read entries from db:", err)
 	}
 
-	Infof("server: sending %d entries", len(entries))
-	if len(entries) < 1 {
-		// FIXME: if no entries found, timer is missing newest entries.........
-		_, entries, _ := s.raft.fsm.store.GetAll()
-		Warnf("server: timer is missing newest entries. total: %d", len(entries))
+	if len(entries) > 1 {
+		Infof("server: sending %d entries", len(entries))
 	}
 
 	for i, e := range entries {
-		// error 504 code means that the exchange we were trying
-		// to send on didnt exist.  In the case of delayd this usually
-		// means that a consumer didn't set up the exchange they wish
-		// to be notified on. We do not attempt to make this for them,
-		// as we don't know what exchange options they would want, we
-		// simply drop this message, other errors are fatal
-
 		if err := s.sender.Send(e); err != nil {
 			if err, ok := err.(*amqp.Error); ok && err.Code == 504 {
+				// error 504 code means that the exchange we were trying
+				// to send on didnt exist.  In the case of delayd this usually
+				// means that a consumer didn't set up the exchange they wish
+				// to be notified on. We do not attempt to make this for them,
+				// as we don't know what exchange options they would want, we
+				// simply drop this message, other errors are fatal
 				Warnf("server: channel/connection not set up for exchange `%s`, message will be deleted", e.Target, err)
-				break
 			} else {
-				Fatal("server: could not send entry: ", err)
+				Fatal("server: could not send entry:", err)
 			}
 		}
 
