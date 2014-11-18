@@ -30,6 +30,14 @@ type AMQPConfig struct {
 	Queue    AMQPQueue    `toml:"queue"`
 }
 
+// SQSConfig holds configuration for SQS.
+type SQSConfig struct {
+	Queue               string `toml:"queue"`
+	Region              string `toml:"region"`
+	MaxNumberOfMessages int    `toml:"max_number_messages"`
+	VisibilityTimeout   int    `toml:"visibility_timeout"`
+}
+
 // RaftConfig holds configuration for Raft concensus
 type RaftConfig struct {
 	Single    bool     `toml:"single_node"`
@@ -42,6 +50,7 @@ type RaftConfig struct {
 type Config struct {
 	AMQP    AMQPConfig `toml:"amqp"`
 	Raft    RaftConfig `toml:"raft"`
+	SQS     SQSConfig  `toml:"sqs"`
 	DataDir string     `toml:"data_dir"`
 	LogDir  string     `toml:"log_dir"`
 }

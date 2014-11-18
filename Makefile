@@ -32,7 +32,10 @@ test:
 	go test -v -short -timeout=1s ./...
 
 testint:
-	go list ./... | xargs -n1 go test -v -timeout=60s
+	go test ./cmd/delayd/ -v -timeout=60s -amqp
+
+testsqs:
+	go test ./cmd/delayd/ -v -timeout=60s -sqs
 
 check: lint
 	gofmt -l .
@@ -69,4 +72,4 @@ funccov:
 	go test -coverprofile /tmp/delayd-coverprof.cov ./...
 	go tool cover -func /tmp/delayd-coverprof.cov
 
-ci: config check testint
+ci: config check test testint

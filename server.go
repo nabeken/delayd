@@ -12,7 +12,9 @@ import (
 
 // a generous 60 seconds to apply raft commands
 const raftMaxTime = time.Duration(60) * time.Second
-const routingKey = "delayd"
+
+// RoutingKey is used by AMQP consumer when binding a queue to an exchange.
+const RoutingKey = "delayd"
 
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
@@ -26,7 +28,7 @@ type Server struct {
 }
 
 // NewServer initialize Server instance.
-func NewServer(c Config) (*Server, error) {
+func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 	if len(c.LogDir) != 0 {
 		logFile := filepath.Join(c.LogDir, "delayd.log")
 		logOutput, err := os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
@@ -34,16 +36,6 @@ func NewServer(c Config) (*Server, error) {
 			return nil, err
 		}
 		log.SetOutput(logOutput)
-	}
-
-	receiver, err := NewAMQPReceiver(c.AMQP, routingKey)
-	if err != nil {
-		return nil, err
-	}
-
-	sender, err := NewAMQPSender(c.AMQP.URL)
-	if err != nil {
-		return nil, err
 	}
 
 	raft, err := NewRaft(c.Raft, c.DataDir, c.LogDir)
