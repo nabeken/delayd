@@ -89,6 +89,7 @@ func (t *Timer) tickerLoop() {
 	for {
 		select {
 		case <-t.shutdown:
+			Info("timer: ticker: receiving shutdown signal. existing.")
 			return
 		case sendTime := <-t.ticker.C:
 			Debug("timer: received from ticker:", sendTime)
@@ -102,6 +103,7 @@ func (t *Timer) timerLoop() {
 	for {
 		select {
 		case <-t.shutdown:
+			Info("timer: receiving shutdown signal. existing.")
 			return
 		case sendTime := <-t.tickCh:
 			Debug("timer: received from tickCh:", sendTime)
