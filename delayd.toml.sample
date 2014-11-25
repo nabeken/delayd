@@ -19,7 +19,6 @@ noWait = false
 [amqp.queue]
 name = "delayd"
 bind = [ "delayd" ]
-
 durable = true
 auto_ack = false
 exclusive = false
@@ -27,4 +26,8 @@ no_local = false
 no_wait = false
 auto_delete = false
 
-# args table is not covered here
+[sqs]
+region = "ap-northeast-1"
+queue = "delayd"
+max_number_messages = 10
+visibility_timeout = 10

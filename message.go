@@ -3,6 +3,7 @@ package delayd
 import (
 	"time"
 
+	"github.com/crowdmob/goamz/sqs"
 	"github.com/streadway/amqp"
 	"github.com/ugorji/go/codec"
 )
@@ -38,6 +39,24 @@ func (d *AMQPDeliverer) Nack() error {
 	return d.Delivery.Nack(false, false)
 }
 
+// SQSDeliverer implements MessageDeliverer for SQS.
+type SQSDeliverer struct {
+	queue *sqs.Queue
+	msg   *sqs.Message
+}
+
+// Ack deletes a message in the queue.
+func (d *SQSDeliverer) Ack() error {
+	_, err := d.queue.DeleteMessage(d.msg)
+	return err
+}
+
+// Nack does nothing because no need to return a negative acknowledgement in SQS.
+// Message will be available after visibility timeout expires.
+func (d *SQSDeliverer) Nack() error {
+	return nil
+}
+
 // Entry represents a delayed message.
 type Entry struct {
 	// Required
@@ -50,6 +69,9 @@ type Entry struct {
 
 	// AMQP specific message
 	AMQP *AMQPMessage
+
+	// SQS specific message
+	SQS *SQSMessage
 }
 
 // AMQPMessage represents AMQP specific message.
@@ -57,6 +79,11 @@ type AMQPMessage struct {
 	ContentEncoding string
 	ContentType     string
 	CorrelationID   string
+}
+
+// SQSMessage represents SQS specific message.
+type SQSMessage struct {
+	MessageID string
 }
 
 // entryFromBytes creates a new Entry based on the MessagePack encoded byte slice b.

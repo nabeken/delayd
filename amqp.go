@@ -107,7 +107,7 @@ type AMQPReceiver struct {
 	*AMQPConsumer
 
 	c            chan Message
-	shutdown     chan bool
+	shutdown     chan struct{}
 	metaMessages chan (<-chan amqp.Delivery)
 	messages     chan amqp.Delivery
 	paused       bool
@@ -132,7 +132,7 @@ func NewAMQPReceiver(ac AMQPConfig, routingKey string) (*AMQPReceiver, error) {
 		metaMessages: make(chan (<-chan amqp.Delivery)),
 		ac:           ac,
 		paused:       true,
-		shutdown:     make(chan bool),
+		shutdown:     make(chan struct{}),
 	}
 
 	go receiver.monitorChannel()
@@ -211,10 +211,8 @@ func (a *AMQPReceiver) messageLoop() {
 
 			entry.Body = delivery.Body
 			msg := Message{
-				Entry: entry,
-				MessageDeliverer: &AMQPDeliverer{
-					Delivery: delivery,
-				},
+				Entry:            entry,
+				MessageDeliverer: deliverer,
 			}
 			a.c <- msg
 		}
@@ -228,7 +226,6 @@ func (a *AMQPReceiver) MessageCh() <-chan Message {
 
 // Close pauses the receiver and signals the shutdown channel.
 // Finally, it closes AMQP the channel and connection.
-// FIXME: Is this still restartable?
 func (a *AMQPReceiver) Close() {
 	a.Pause()
 	close(a.shutdown)
@@ -266,7 +263,7 @@ func (a *AMQPReceiver) Start() error {
 	return err
 }
 
-// Pause listening for messages on the queue
+// Pause pauses listening for messages on the queue
 func (a *AMQPReceiver) Pause() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -292,7 +289,7 @@ func NewAMQPSender(amqpURL string) (*AMQPSender, error) {
 	return &AMQPSender{AMQP: a}, nil
 }
 
-// Send sends a delayd entry over , using the entry's Target as the publish
+// Send sends a delayd entry over AMQP, using the entry's Target as the publish
 // exchange.
 func (s *AMQPSender) Send(e *Entry) error {
 	if e.AMQP == nil {

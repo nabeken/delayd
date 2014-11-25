@@ -54,7 +54,17 @@ func execute(c *cli.Context) {
 	// override raft single mode settings by flag
 	config.Raft.Single = c.Bool("single")
 
-	s, err := delayd.NewServer(config)
+	sender, err := delayd.NewAMQPSender(config.AMQP.URL)
+	if err != nil {
+		panic(err)
+	}
+
+	receiver, err := delayd.NewAMQPReceiver(config.AMQP, delayd.RoutingKey)
+	if err != nil {
+		panic(err)
+	}
+
+	s, err := delayd.NewServer(config, sender, receiver)
 	if err != nil {
 		panic(err)
 	}
