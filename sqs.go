@@ -137,6 +137,8 @@ func (r *SQSReceiver) messageLoop() {
 			}
 
 			delayAttr := findMessageAttribute(msg.MessageAttribute, "delayd-delay")
+			// FIXME: A type of delay attribute should be Number.
+			// Current SQS implementation in Go does not allow us to set an attributes in Number...
 			delay, err := strconv.ParseInt(delayAttr.Value.StringValue, 10, 64)
 			if err != nil {
 				Warn(delayAttr)
