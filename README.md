@@ -63,6 +63,42 @@ lapses. All Delayd directives are taken from AMQP headers.
 - delayd-key (string) If a message with the same key exists in Delayd,
   this message will replace it.
 
+## SQS
+
+### Message Format
+
+Message bodies are forwarded unchanged from received messages after their delay
+lapses. All Delayd directives are taken from
+[SQS Message Attributes](http://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/SQSMessageAttributes.html).
+
+### Required Message Attributes
+
+- delayd-delay (String) Delay time in ms before emitting this message.
+- delayd-target (string) Target exchange for this message.
+
+Please note that `delayd-delay` is String not Number due to a limitation in SQS implementation in Go.
+
+### Optional Message Attributes
+
+- delayd-key (string) If a message with the same key exists in Delayd,
+  this message will replace it.
+
+### Integration Tests against SQS
+
+You need at least two SQS queue for delayd and target queue and make sure that queues exists.
+
+```bash
+$ vi delayd.toml
+[sqs]
+region = "ap-northeast-1"
+queue = "delayd"
+max_number_messages = 10
+visibility_timeout = 10
+
+$ export DELAYD_TARGET_SQS=delayd-target
+$ make testsqs
+```
+
 ## Development
 
 `delayd` is built/developed with `go1.3`.
