@@ -1,5 +1,9 @@
 package delayd
 
+import (
+	"github.com/BurntSushi/toml"
+)
+
 // AMQPQueue holds configuration for the queue used by the AMQPReceiver
 type AMQPQueue struct {
 	Name       string   `toml:"name"`
@@ -53,4 +57,10 @@ type Config struct {
 	SQS     SQSConfig  `toml:"sqs"`
 	DataDir string     `toml:"data_dir"`
 	LogDir  string     `toml:"log_dir"`
+}
+
+// LoadConfig loads delayd's toml configuration
+func LoadConfig(path string) (config Config, err error) {
+	_, err = toml.DecodeFile(path, &config)
+	return
 }

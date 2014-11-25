@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/codegangsta/cli"
 	"github.com/crowdmob/goamz/aws"
 	"github.com/crowdmob/goamz/sqs"
@@ -38,7 +37,7 @@ func installSigHandler(s Stopper) {
 }
 
 func execute(c *cli.Context) {
-	config, err := loadConfig(c.String("config"))
+	config, err := delayd.LoadConfig(c.String("config"))
 	if err != nil {
 		delayd.Fatal("cli: unable to read config file:", err)
 	}
@@ -110,12 +109,6 @@ func main() {
 	}
 
 	app.Run(os.Args)
-}
-
-// loadConfig loads delayd's toml configuration
-func loadConfig(path string) (config delayd.Config, err error) {
-	_, err = toml.DecodeFile(path, &config)
-	return
 }
 
 func getBroker(b string, config delayd.Config) (delayd.Sender, delayd.Receiver, error) {
