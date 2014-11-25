@@ -2,10 +2,14 @@ delayd:
   build: "."
   environment:
     AMQP_URL: "amqp://rabbitmq"
-    RAFT_PEERS:
+    AWS_ACCESS_KEY_ID:
+    AWS_SECRET_ACCESS_KEY:
     RAFT_HOSTS:
+    RAFT_PEERS:
+    SQS_QUEUE_NAME:
   links:
     - rabbitmq
+  command: delayd server -single -broker sqs
 
 rabbitmq:
   image: dockerfile/rabbitmq

@@ -294,7 +294,7 @@ func doIntegration(t *testing.T, f testCaseFunc) {
 
 	assert := assert.New(t)
 
-	config, err := loadConfig("delayd.toml")
+	config, err := delayd.LoadConfig("delayd.toml")
 
 	// create an ephemeral location for data storage during tests
 	config.DataDir, err = ioutil.TempDir("", "delayd-testint")
