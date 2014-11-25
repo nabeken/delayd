@@ -31,7 +31,7 @@ func NewSQSConsumer(sc SQSConfig, s *sqs.SQS) (*SQSConsumer, error) {
 		Queue:  q,
 
 		paused:   true,
-		Messages: make(chan *sqs.Message),
+		Messages: make(chan *sqs.Message, sc.MaxNumberOfMessages),
 		shutdown: make(chan struct{}),
 	}
 
