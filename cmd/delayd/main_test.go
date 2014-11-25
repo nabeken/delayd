@@ -22,8 +22,8 @@ import (
 )
 
 var (
-	integAMQP = flag.Bool("amqp", false, "Enable integration tests against AMQP")
-	integSQS  = flag.Bool("sqs", false, "Enable integration tests against SQS")
+	flagAMQP = flag.Bool("amqp", false, "Enable integration tests against AMQP")
+	flagSQS  = flag.Bool("sqs", false, "Enable integration tests against SQS")
 )
 
 func getFileAsString(path string) string {
@@ -213,7 +213,7 @@ type testCase struct {
 type testCaseFunc func(config delayd.Config, out io.Writer) testCase
 
 func TestSQS(t *testing.T) {
-	if !*integSQS {
+	if !*flagSQS {
 		t.Skip("Integration tests for SQS is disabled")
 	}
 
@@ -255,7 +255,7 @@ func TestSQS(t *testing.T) {
 }
 
 func TestAMQP(t *testing.T) {
-	if !*integAMQP {
+	if !*flagAMQP {
 		t.Skip("Integration tests for AMQP is disabled")
 	}
 
