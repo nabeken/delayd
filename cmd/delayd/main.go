@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -49,9 +50,19 @@ func execute(c *cli.Context) {
 	if sqsQueue := os.Getenv("SQS_QUEUE_NAME"); sqsQueue != "" {
 		config.SQS.Queue = sqsQueue
 	}
+
+	// configure advertise addr and listen addr
 	if raftHost := os.Getenv("RAFT_HOST"); raftHost != "" {
-		config.Raft.Listen = raftHost
+		config.Raft.Listen = net.JoinHostPort(raftHost, c.String("port"))
 	}
+	if config.Raft.Advertise == "" {
+		advIP, err := delayd.GetPrivateIP()
+		if err != nil {
+			delayd.Fatal("failed to get advertise address:", err)
+		}
+		config.Raft.Advertise = net.JoinHostPort(advIP.String(), c.String("port"))
+	}
+
 	if peers := os.Getenv("RAFT_PEERS"); peers != "" {
 		config.Raft.Peers = strings.Split(peers, ",")
 	}
@@ -61,16 +72,21 @@ func execute(c *cli.Context) {
 
 	sender, receiver, err := getBroker(c.String("broker"), config)
 	if err != nil {
-		panic(err)
+		delayd.Fatal(err)
 	}
 
 	s, err := delayd.NewServer(config, sender, receiver)
 	if err != nil {
-		panic(err)
+		delayd.Fatal(err)
 	}
 	installSigHandler(s)
 
-	delayd.Infof("cli: starting delayd with %s", c.String("broker"))
+	delayd.Infof("cli: starting delayd with %s. Listen: %s, Adv: %s, Peers: %v",
+		c.String("broker"),
+		config.Raft.Listen,
+		config.Raft.Advertise,
+		config.Raft.Peers,
+	)
 	s.Run()
 }
 
@@ -90,6 +106,11 @@ func main() {
 			Name:  "broker, b",
 			Value: "amqp",
 			Usage: "specify a broker for queue. 'amqp' and 'sqs' is available.",
+		},
+		cli.StringFlag{
+			Name:  "port, p",
+			Value: "7999",
+			Usage: "specify a port number for Raft RPC. Default: '7999'",
 		},
 		cli.BoolFlag{
 			Name:  "single",

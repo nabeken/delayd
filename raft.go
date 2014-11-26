@@ -212,12 +212,6 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 		return nil, err
 	}
 
-	// this should be our externally visible address. If not provided in the
-	// config as 'advertise', we use the address of the listen config.
-	if c.Advertise == "" {
-		c.Advertise = c.Listen
-	}
-
 	a, err := net.ResolveTCPAddr("tcp", c.Advertise)
 	if err != nil {
 		Error("raft: could not lookup raft advertise address:", err)
@@ -231,25 +225,29 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 	}
 
 	peerStore := raft.NewJSONPeers(raftDir, transport)
-
 	if !c.Single {
-		peers, err := peerStore.Peers()
-		if err != nil {
-			return nil, err
-		}
-
+		// Ensure that local host is included
+		c.Peers = append(c.Peers, transport.LocalAddr().String())
 		for _, peerStr := range c.Peers {
+			peers, err := peerStore.Peers()
+			if err != nil {
+				return nil, err
+			}
+
 			peer, err := net.ResolveTCPAddr("tcp", peerStr)
 			if err != nil {
 				Fatal("raft: bad peer:", err)
 			}
-
-			if !raft.PeerContained(peers, peer) {
-				peerStore.SetPeers(raft.AddUniquePeer(peers, peer))
+			if err := peerStore.SetPeers(raft.AddUniquePeer(peers, peer)); err != nil {
+				Fatal("raft: bad peer:", err)
 			}
 		}
 	} else {
 		Warn("raft: running in single node permitted mode. only use this for testing!")
+	}
+
+	if peers, err := peerStore.Peers(); err == nil {
+		Infof("raft: we have %d peers %v", len(peers), peers)
 	}
 
 	mdb, err := raftmdb.NewMDBStore(raftDir)
