@@ -4,6 +4,18 @@ MAINTAINER TANABE Ken-ichi <nabeken@tknetworks.org>
 RUN mkdir -p /go/src/app
 WORKDIR /go/src/app
 
+RUN go-wrapper download \
+  github.com/BurntSushi/toml \
+  github.com/armon/gomdb \
+  github.com/codegangsta/cli \
+  github.com/crowdmob/goamz/aws \
+  github.com/crowdmob/goamz/sqs \
+  github.com/hashicorp/raft \
+  github.com/hashicorp/raft-mdb \
+  github.com/streadway/amqp \
+  github.com/ugorji/go/codec \
+  && :
+
 COPY . /go/src/app
 
 RUN cp -f delayd.toml.docker /etc/delayd.toml && \
