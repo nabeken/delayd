@@ -224,31 +224,37 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 		return nil, err
 	}
 
-	peerStore := raft.NewJSONPeers(raftDir, transport)
-	if !c.Single {
+	if c.Single {
 		// Ensure that local host is included
 		c.Peers = append(c.Peers, transport.LocalAddr().String())
-		for _, peerStr := range c.Peers {
-			peers, err := peerStore.Peers()
-			if err != nil {
-				return nil, err
-			}
+	}
 
-			peer, err := net.ResolveTCPAddr("tcp", peerStr)
-			if err != nil {
-				Fatal("raft: bad peer:", err)
-			}
+	peerStore := raft.NewJSONPeers(raftDir, transport)
+	for _, peerStr := range c.Peers {
+		peers, err := peerStore.Peers()
+		if err != nil {
+			return nil, err
+		}
+
+		peer, err := net.ResolveTCPAddr("tcp", peerStr)
+		if err != nil {
+			Fatal("raft: bad peer:", err)
+		}
+		if !raft.PeerContained(peers, peer) {
 			if err := peerStore.SetPeers(raft.AddUniquePeer(peers, peer)); err != nil {
 				Fatal("raft: bad peer:", err)
 			}
 		}
-	} else {
-		Warn("raft: running in single node permitted mode. only use this for testing!")
 	}
 
-	if peers, err := peerStore.Peers(); err == nil {
-		Infof("raft: we have %d peers %v", len(peers), peers)
-	}
+	go func() {
+		for {
+			if peers, err := peerStore.Peers(); err == nil {
+				Debugf("raft: we have %d peer(s) %v", len(peers), peers)
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
 
 	mdb, err := raftmdb.NewMDBStore(raftDir)
 	if err != nil {

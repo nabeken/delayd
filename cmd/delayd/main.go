@@ -81,11 +81,12 @@ func execute(c *cli.Context) {
 	}
 	installSigHandler(s)
 
-	delayd.Infof("cli: starting delayd with %s. Listen: %s, Adv: %s, Peers: %v",
+	delayd.Infof("cli: starting delayd with %s. Listen: %s, Adv: %s, Peers: %v, Bootstrap: %v",
 		c.String("broker"),
 		config.Raft.Listen,
 		config.Raft.Advertise,
 		config.Raft.Peers,
+		c.Bool("single"),
 	)
 	s.Run()
 }
