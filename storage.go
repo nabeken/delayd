@@ -228,8 +228,6 @@ func (s *Storage) innerGet(t time.Time, all bool) ([][]byte, []*Entry, error) {
 	defer cursor.Close()
 
 	sk := uint64(t.UnixNano())
-	Debug("storage: looking for:", t, t.UnixNano())
-
 	uuids := [][]byte{}
 	entries := []*Entry{}
 	for {
