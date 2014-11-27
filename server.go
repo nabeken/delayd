@@ -2,11 +2,14 @@ package delayd
 
 import (
 	"log"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/armon/consul-api"
 	"github.com/streadway/amqp"
 )
 
@@ -16,15 +19,23 @@ const raftMaxTime = time.Duration(60) * time.Second
 // RoutingKey is used by AMQP consumer when binding a queue to an exchange.
 const RoutingKey = "delayd"
 
+// delaydService is used by consulapi to watch delayd service on Consul
+const delaydService = "delayd"
+
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
-	sender     Sender
-	receiver   Receiver
-	raft       *Raft
-	timer      *Timer
-	shutdownCh chan bool
-	leader     bool
-	mu         sync.Mutex
+	sender       Sender
+	receiver     Receiver
+	raft         *Raft
+	timer        *Timer
+	shutdownCh   chan bool
+	serviceCh    chan []*consulapi.ServiceEntry
+	leader       bool
+	mu           sync.Mutex
+	consul       *consulapi.Client
+	config       Config
+	registration *consulapi.AgentServiceRegistration
+	bootstrapped bool
 }
 
 // NewServer initialize Server instance.
@@ -38,6 +49,11 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 		log.SetOutput(logOutput)
 	}
 
+	consul, err := NewConsul(c.Consul)
+	if err != nil {
+		return nil, err
+	}
+
 	raft, err := NewRaft(c.Raft, c.DataDir, c.LogDir)
 	if err != nil {
 		return nil, err
@@ -47,7 +63,10 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 		sender:     sender,
 		receiver:   receiver,
 		raft:       raft,
+		consul:     consul,
+		config:     c,
 		shutdownCh: make(chan bool),
+		serviceCh:  make(chan []*consulapi.ServiceEntry),
 	}, nil
 }
 
@@ -59,6 +78,10 @@ func (s *Server) Run() {
 
 	go s.observeLeaderChanges()
 	go s.observeNextTime()
+
+	if s.config.UseConsul {
+		go s.startConsulBackend()
+	}
 
 	for {
 		msg, ok := <-s.receiver.MessageCh()
@@ -93,6 +116,10 @@ func (s *Server) Stop() {
 	s.receiver.Close()
 	s.timer.Stop()
 
+	if s.config.UseConsul {
+		s.deregisterService()
+	}
+
 	close(s.shutdownCh)
 
 	// with no FSM stimulus, we don't need to send.
@@ -110,6 +137,123 @@ func (s *Server) resetTimer() {
 	}
 	if ok {
 		s.timer.Reset(t, true)
+	}
+}
+
+func (s *Server) registerService() error {
+	Info("server: registering delayd service on Consul")
+	agent := s.consul.Agent()
+
+	_, port, err := net.SplitHostPort(s.config.Raft.Listen)
+	if err != nil {
+		return err
+	}
+	p, err := strconv.ParseInt(port, 10, 32)
+	if err != nil {
+		return nil
+	}
+
+	s.registration = &consulapi.AgentServiceRegistration{
+		Name: delaydService,
+		ID:   "delayd-" + port,
+		Port: int(p),
+	}
+	err = agent.ServiceRegister(s.registration)
+	if err != nil {
+		Warn("server: failed to register delayd service on Consul.", err)
+	}
+	return err
+}
+
+func (s *Server) deregisterService() error {
+	Info("server: deregistering delayd service from Consul")
+	agent := s.consul.Agent()
+	err := agent.ServiceDeregister(s.registration.ID)
+	if err != nil {
+		Warn("server: failed to deregister delayd service from Consul")
+	}
+	return err
+}
+
+func (s *Server) startConsulBackend() {
+	go s.observeService()
+
+	if !s.bootstrapped {
+		go s.maybeBootstrap()
+	}
+
+	// Do our best for registering delayd service to Consul
+	for {
+		if err := s.registerService(); err != nil {
+			// TODO: exponential backoff
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		break
+	}
+}
+
+func (s *Server) observeService() {
+	query := consulapi.QueryOptions{
+		AllowStale:        false,
+		RequireConsistent: true,
+	}
+	health := s.consul.Health()
+
+	Debug("server: starting service monitoring")
+	for {
+		select {
+		case <-s.shutdownCh:
+			close(s.serviceCh)
+			return
+		default:
+		}
+
+		Info("server: Waiting for node changes...")
+		entries, meta, err := health.Service(delaydService, "", false, &query)
+		if err != nil {
+			Error(err)
+			continue
+		}
+		s.serviceCh <- entries
+		query.WaitIndex = meta.LastIndex
+	}
+}
+
+func (s *Server) bootstrap(services []*consulapi.ServiceEntry) {
+	peers := []net.Addr{}
+	for _, s := range services {
+		port := strconv.FormatInt(int64(s.Service.Port), 10)
+		// Currently, IP address in consul's service catalog can not be set in registration.
+		// This limitation is so bad for testing multiple delayd instance with 1 agent.
+		// See https://github.com/hashicorp/consul/issues/229 for discussion
+		address := s.Node.Address
+		if tweak := os.Getenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK"); tweak != "" {
+			address = tweak
+		}
+		peer, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(address, port))
+		if err != nil {
+			Fatal("server: bad peer:", err)
+		}
+		peers = append(peers, peer)
+	}
+	s.raft.raft.SetPeers(peers)
+	s.bootstrapped = true
+	Infof("server: bootstrapped with %v", peers)
+}
+
+func (s *Server) maybeBootstrap() {
+	Infof("server: Waiting for joining %d nodes...", s.config.BootstrapExpect)
+	for {
+		select {
+		case <-s.shutdownCh:
+			return
+		case services := <-s.serviceCh:
+			if len(services) >= s.config.BootstrapExpect {
+				s.bootstrap(services)
+				return
+			}
+		}
 	}
 }
 
