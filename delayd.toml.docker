@@ -8,6 +8,7 @@ log_dir = ""
 
 [raft]
 single_node = true
+listen = "0.0.0.0:7999"
 
 [amqp]
 url = "amqp://localhost"
