@@ -165,6 +165,10 @@ func (s *Server) timerSend(t time.Time) {
 		Infof("server: sending %d entries", len(entries))
 	}
 
+	if len(entries) == 0 {
+		return
+	}
+
 	for i, e := range entries {
 		if err := s.sender.Send(e); err != nil {
 			if err, ok := err.(*amqp.Error); ok && err.Code == 504 {
