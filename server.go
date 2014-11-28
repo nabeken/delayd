@@ -209,7 +209,7 @@ func (s *Server) observeService() {
 		default:
 		}
 
-		Info("server: Waiting for node changes...")
+		Info("server: waiting for node changes...")
 		entries, meta, err := health.Service(delaydService, "", false, &query)
 		if err != nil {
 			Error(err)
