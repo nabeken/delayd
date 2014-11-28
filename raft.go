@@ -248,19 +248,6 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 		}
 	}
 
-	go func() {
-		num := 0
-		for {
-			if peers, err := peerStore.Peers(); err == nil {
-				if cur := len(peers); num != cur {
-					Debugf("raft: we have %d peer(s) %v", cur, peers)
-					num = cur
-				}
-			}
-			time.Sleep(1 * time.Second)
-		}
-	}()
-
 	mdb, err := raftmdb.NewMDBStore(raftDir)
 	if err != nil {
 		Error("raft: could not create raft store:", err)
