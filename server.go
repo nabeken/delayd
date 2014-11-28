@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/armon/consul-api"
+	"github.com/hashicorp/raft"
 	"github.com/streadway/amqp"
 )
 
@@ -177,10 +178,9 @@ func (s *Server) deregisterService() error {
 
 func (s *Server) startConsulBackend() {
 	go s.observeService()
+	go s.observeServiceChanges()
 
-	if !s.bootstrapped {
-		go s.maybeBootstrap()
-	}
+	Infof("server: waiting for joining %d nodes...", s.config.BootstrapExpect)
 
 	// Do our best for registering delayd service to Consul
 	for {
@@ -220,38 +220,54 @@ func (s *Server) observeService() {
 	}
 }
 
-func (s *Server) bootstrap(services []*consulapi.ServiceEntry) {
-	peers := []net.Addr{}
-	for _, s := range services {
-		port := strconv.FormatInt(int64(s.Service.Port), 10)
-		// Currently, IP address in consul's service catalog can not be set in registration.
-		// This limitation is so bad for testing multiple delayd instance with 1 agent.
-		// See https://github.com/hashicorp/consul/issues/229 for discussion
-		address := s.Node.Address
-		if tweak := os.Getenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK"); tweak != "" {
-			address = tweak
+func (s *Server) registeredSelf(services []*consulapi.ServiceEntry) bool {
+	for _, service := range services {
+		if s.registration.Name == service.Service.Service &&
+			s.registration.ID == service.Service.ID {
+			return true
 		}
-		peer, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(address, port))
-		if err != nil {
-			Fatal("server: bad peer:", err)
-		}
-		peers = append(peers, peer)
 	}
+	return false
+}
+
+func (s *Server) bootstrap(services []*consulapi.ServiceEntry) {
+	peers := convertPeersFromService(services)
 	s.raft.raft.SetPeers(peers)
 	s.bootstrapped = true
 	Infof("server: bootstrapped with %v", peers)
 }
 
-func (s *Server) maybeBootstrap() {
-	Infof("server: Waiting for joining %d nodes...", s.config.BootstrapExpect)
+func (s *Server) observeServiceChanges() {
 	for {
 		select {
 		case <-s.shutdownCh:
 			return
 		case services := <-s.serviceCh:
-			if len(services) >= s.config.BootstrapExpect {
-				s.bootstrap(services)
-				return
+			if !s.bootstrapped {
+				if len(services) >= s.config.BootstrapExpect && s.registeredSelf(services) {
+					s.bootstrap(services)
+				}
+				continue
+			}
+
+			// leader needs to maintain peers in response to service changes after bootstraped.
+			if !s.leader {
+				continue
+			}
+
+			newPeers := convertPeersFromService(services)
+			curPeers, err := s.raft.peerStore.Peers()
+			if err != nil {
+				Error("failed to get peers:", err)
+				continue
+			}
+
+			for _, p := range newPeers {
+				if !raft.PeerContained(curPeers, p) {
+					// new peer is found..
+					Infof("server: new peer %v is found on consul. adding...", p)
+					s.raft.raft.AddPeer(p)
+				}
 			}
 		}
 	}
@@ -315,17 +331,21 @@ func (s *Server) timerSend(t time.Time) {
 
 	for i, e := range entries {
 		if err := s.sender.Send(e); err != nil {
-			if err, ok := err.(*amqp.Error); ok && err.Code == 504 {
+			if aerr, ok := err.(*amqp.Error); ok && aerr.Code == 504 {
 				// error 504 code means that the exchange we were trying
 				// to send on didnt exist.  In the case of delayd this usually
 				// means that a consumer didn't set up the exchange they wish
 				// to be notified on. We do not attempt to make this for them,
 				// as we don't know what exchange options they would want, we
 				// simply drop this message, other errors are fatal
-				Warnf("server: channel/connection not set up for exchange `%s`, message will be deleted", e.Target, err)
-			} else {
-				Fatal("server: could not send entry:", err)
+				Warnf("server: channel/connection not set up for exchange `%s`, message will be deleted", e.Target, aerr)
 			}
+
+			// FIXME: I don't think Fatal here is right way.
+			// If a reason that node is failed to send is node specific,
+			// Fatal causes leader election then a problem may be resolved.
+			// If the reason is not node specific, all instance may be down....
+			Fatal("server: could not send entry:", err)
 		}
 
 		if err := s.raft.Remove(uuids[i], raftMaxTime); err != nil {
@@ -345,4 +365,24 @@ func (s *Server) timerSend(t time.Time) {
 	}
 
 	Debug("server: synced raft after send.")
+}
+
+func convertPeersFromService(services []*consulapi.ServiceEntry) []net.Addr {
+	peers := []net.Addr{}
+	for _, service := range services {
+		port := strconv.FormatInt(int64(service.Service.Port), 10)
+		// Currently, IP address in consul's service catalog can not be set in registration.
+		// This limitation is so bad for testing multiple delayd instance with 1 agent.
+		// See https://github.com/hashicorp/consul/issues/229 for discussion
+		address := service.Node.Address
+		if tweak := os.Getenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK"); tweak != "" {
+			address = tweak
+		}
+		peer, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(address, port))
+		if err != nil {
+			Fatal("server: bad peer:", err)
+		}
+		peers = append(peers, peer)
+	}
+	return peers
 }
