@@ -50,13 +50,24 @@ type RaftConfig struct {
 	Advertise string   `toml:"advertise"`
 }
 
+// ConsulConfig holds configuration for Consul Agent
+type ConsulConfig struct {
+	Address string `toml:"address"`
+}
+
 // Config holds delayd configuration
 type Config struct {
-	AMQP    AMQPConfig `toml:"amqp"`
-	Raft    RaftConfig `toml:"raft"`
-	SQS     SQSConfig  `toml:"sqs"`
-	DataDir string     `toml:"data_dir"`
-	LogDir  string     `toml:"log_dir"`
+	AMQP   AMQPConfig   `toml:"amqp"`
+	Raft   RaftConfig   `toml:"raft"`
+	SQS    SQSConfig    `toml:"sqs"`
+	Consul ConsulConfig `toml:"consul"`
+
+	DataDir string `toml:"data_dir"`
+	LogDir  string `toml:"log_dir"`
+
+	BootstrapExpect int `toml:"bootstrap_expect"`
+
+	UseConsul bool `toml:"use_consul"`
 }
 
 // LoadConfig loads delayd's toml configuration

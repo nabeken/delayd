@@ -43,7 +43,6 @@ func execute(c *cli.Context) {
 		delayd.Fatal("cli: unable to read config file:", err)
 	}
 
-	// override configuration by envvars
 	if url := os.Getenv("AMQP_URL"); url != "" {
 		config.AMQP.URL = url
 	}
@@ -51,24 +50,40 @@ func execute(c *cli.Context) {
 		config.SQS.Queue = sqsQueue
 	}
 
-	// configure advertise addr and listen addr
 	if raftHost := os.Getenv("RAFT_HOST"); raftHost != "" {
 		config.Raft.Listen = net.JoinHostPort(raftHost, c.String("port"))
+	} else if configRaftHost := config.Raft.Listen; configRaftHost != "" {
+		config.Raft.Listen = net.JoinHostPort(configRaftHost, c.String("port"))
 	}
-	if config.Raft.Advertise == "" {
+
+	if advertise := c.String("advertise"); advertise == "" {
 		advIP, err := delayd.GetPrivateIP()
 		if err != nil {
 			delayd.Fatal("failed to get advertise address:", err)
 		}
+
 		config.Raft.Advertise = net.JoinHostPort(advIP.String(), c.String("port"))
+	} else {
+		config.Raft.Advertise = net.JoinHostPort(advertise, c.String("port"))
 	}
 
 	if peers := os.Getenv("RAFT_PEERS"); peers != "" {
 		config.Raft.Peers = strings.Split(peers, ",")
 	}
 
-	// override raft single mode settings by flag
 	config.Raft.Single = c.Bool("single")
+
+	if config.BootstrapExpect == 0 {
+		config.BootstrapExpect = c.Int("bootstrap-expect")
+	}
+
+	if consulHost := os.Getenv("CONSUL_HOST"); consulHost != "" {
+		config.Consul.Address = consulHost
+	}
+
+	if !config.UseConsul {
+		config.UseConsul = c.Bool("consul")
+	}
 
 	sender, receiver, err := getBroker(c.String("broker"), config)
 	if err != nil {
@@ -113,9 +128,23 @@ func main() {
 			Value: "7999",
 			Usage: "specify a port number for Raft RPC. Default: '7999'",
 		},
+		cli.StringFlag{
+			Name:  "advertise",
+			Value: "",
+			Usage: "specify a advertise address for Raft RPC.",
+		},
+		cli.IntFlag{
+			Name:  "bootstrap-expect",
+			Value: 0,
+			Usage: "specify a number of expected delayd instances.",
+		},
 		cli.BoolFlag{
 			Name:  "single",
 			Usage: "run raft single mode",
+		},
+		cli.BoolFlag{
+			Name:  "consul",
+			Usage: "use consul backend as peer management",
 		},
 	}
 

@@ -183,6 +183,7 @@ type Raft struct {
 	transport *raft.NetworkTransport
 	mdb       *raftmdb.MDBStore
 	raft      *raft.Raft
+	peerStore raft.PeerStore
 	fsm       *FSM
 }
 
@@ -247,15 +248,6 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 		}
 	}
 
-	go func() {
-		for {
-			if peers, err := peerStore.Peers(); err == nil {
-				Debugf("raft: we have %d peer(s) %v", len(peers), peers)
-			}
-			time.Sleep(1 * time.Second)
-		}
-	}()
-
 	mdb, err := raftmdb.NewMDBStore(raftDir)
 	if err != nil {
 		Error("raft: could not create raft store:", err)
@@ -280,6 +272,7 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 		mdb:       mdb,
 		fsm:       fsm,
 		raft:      raft,
+		peerStore: peerStore,
 	}, nil
 }
 
