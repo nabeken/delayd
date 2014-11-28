@@ -180,7 +180,7 @@ func (s *Server) startConsulBackend() {
 	go s.observeService()
 	go s.observeServiceChanges()
 
-	Infof("server: Waiting for joining %d nodes...", s.config.BootstrapExpect)
+	Infof("server: waiting for joining %d nodes...", s.config.BootstrapExpect)
 
 	// Do our best for registering delayd service to Consul
 	for {
@@ -250,7 +250,7 @@ func (s *Server) observeServiceChanges() {
 				continue
 			}
 
-			// leader need to maintain peers in response to service changes after bootstraped.
+			// leader needs to maintain peers in response to service changes after bootstraped.
 			if !s.leader {
 				continue
 			}
