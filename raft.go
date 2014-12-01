@@ -192,6 +192,10 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 	config := raft.DefaultConfig()
 	config.EnableSingleNode = c.Single
 
+	// ShutdownOnRemove = true prevents us from removing and joining nodes.
+	// If LogRemovePeer is applied, raft goes shutting down.
+	config.ShutdownOnRemove = false
+
 	if len(logDir) > 0 {
 		logFile := filepath.Join(logDir, "raft.log")
 		logOutput, err := os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)

@@ -32,8 +32,12 @@ func installSigHandler(s Stopper) {
 	go func() {
 		select {
 		case <-ch:
+			// we should wait until s.Stop returns for 10 seconds.
+			time.AfterFunc(10*time.Second, func() {
+				delayd.Error("Server#Stop() does not return for 10 seconds. existing...")
+				os.Exit(0)
+			})
 			s.Stop()
-			os.Exit(0)
 		}
 	}()
 }
@@ -97,7 +101,7 @@ func execute(c *cli.Context) {
 	}
 	installSigHandler(s)
 
-	delayd.Infof("cli: starting delayd with %s. Listen: %s, Adv: %s, Peers: %v, Bootstrap: %v",
+	delayd.Infof("cli: starting delayd with %s. Listen: %s, Adv: %s, StaticPeers: %v, Bootstrap: %v",
 		c.String("broker"),
 		config.Raft.Listen,
 		config.Raft.Advertise,

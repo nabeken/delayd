@@ -4,9 +4,12 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/armon/consul-api"
@@ -23,20 +26,29 @@ const RoutingKey = "delayd"
 // delaydService is used by consulapi to watch delayd service on Consul
 const delaydService = "delayd"
 
+const (
+	delaydEvent      = "delayd"
+	delaydLeaveEvent = delaydEvent + ":" + "leave:"
+)
+
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
 	sender       Sender
 	receiver     Receiver
 	raft         *Raft
 	timer        *Timer
-	shutdownCh   chan bool
-	serviceCh    chan []*consulapi.ServiceEntry
-	leader       bool
-	mu           sync.Mutex
 	consul       *consulapi.Client
 	config       Config
 	registration *consulapi.AgentServiceRegistration
 	bootstrapped bool
+
+	shutdownCh chan bool
+	serviceCh  chan []*consulapi.ServiceEntry
+	eventCh    chan *consulapi.UserEvent
+	stopCh     chan struct{}
+
+	mu     sync.Mutex
+	leader bool
 }
 
 // NewServer initialize Server instance.
@@ -68,6 +80,8 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 		config:     c,
 		shutdownCh: make(chan bool),
 		serviceCh:  make(chan []*consulapi.ServiceEntry),
+		eventCh:    make(chan *consulapi.UserEvent),
+		stopCh:     make(chan struct{}),
 	}, nil
 }
 
@@ -85,27 +99,32 @@ func (s *Server) Run() {
 	}
 
 	for {
-		msg, ok := <-s.receiver.MessageCh()
-		entry := msg.Entry
-		// XXX cleanup needed here before exit
-		if !ok {
-			continue
-		}
+		select {
+		case <-s.stopCh:
+			Info("server/run: shutting down gracefully.")
+			return
+		case msg, ok := <-s.receiver.MessageCh():
+			entry := msg.Entry
+			// XXX cleanup needed here before exit
+			if !ok {
+				continue
+			}
 
-		Debug("server: got new request entry:", entry)
-		b, err := entry.ToBytes()
-		if err != nil {
-			Error("server: error encoding entry: ", err)
-			continue
-		}
+			Debug("server: got new request entry:", entry)
+			b, err := entry.ToBytes()
+			if err != nil {
+				Error("server: error encoding entry: ", err)
+				continue
+			}
 
-		if err := s.raft.Add(b, raftMaxTime); err != nil {
-			Error("server: failed to add: ", err)
-			msg.Nack()
-			continue
-		}
+			if err := s.raft.Add(b, raftMaxTime); err != nil {
+				Error("server: failed to add: ", err)
+				msg.Nack()
+				continue
+			}
 
-		msg.Ack()
+			msg.Ack()
+		}
 	}
 }
 
@@ -128,6 +147,8 @@ func (s *Server) Stop() {
 
 	s.raft.Close()
 
+	// stop mainloop
+	close(s.stopCh)
 	Info("server: terminated.")
 }
 
@@ -177,11 +198,10 @@ func (s *Server) deregisterService() error {
 }
 
 func (s *Server) startConsulBackend() {
-	go s.observeService()
-	go s.observeServiceChanges()
+	go s.observeMembership()
+	go s.observeShutdownSignal()
 
 	Infof("server: waiting for joining %d nodes...", s.config.BootstrapExpect)
-
 	// Do our best for registering delayd service to Consul
 	for {
 		if err := s.registerService(); err != nil {
@@ -193,57 +213,77 @@ func (s *Server) startConsulBackend() {
 	}
 }
 
-func (s *Server) observeService() {
-	query := consulapi.QueryOptions{
-		AllowStale:        false,
-		RequireConsistent: true,
-	}
-	health := s.consul.Health()
-
-	Debug("server: starting service monitoring")
-	for {
-		select {
-		case <-s.shutdownCh:
-			close(s.serviceCh)
-			return
-		default:
+func (s *Server) observeShutdownSignal() {
+	graceful := make(chan os.Signal, 1)
+	signal.Notify(graceful, syscall.SIGUSR2)
+	select {
+	case <-s.shutdownCh:
+		return
+	case <-graceful:
+		Info("server: received signal to leave gracefully")
+		if s.leader {
+			Infof("server: removing myself %v from peerset", s.localAddr())
+			if err := s.raft.raft.RemovePeer(s.localAddr()).Error(); err != nil {
+				Error("failed to remove myself from peerset:", err)
+			}
+		} else {
+			// fire an leave-event
+			event := s.consul.Event()
+			ue := &consulapi.UserEvent{
+				Name:          delaydEvent,
+				Payload:       []byte(delaydLeaveEvent + s.localAddr().String()),
+				ServiceFilter: delaydService,
+			}
+			if _, _, err := event.Fire(ue, nil); err != nil {
+				Error("failed to fire leave-event:", err)
+			}
 		}
-
-		Info("server: waiting for node changes...")
-		entries, meta, err := health.Service(delaydService, "", false, &query)
-		if err != nil {
-			Error(err)
-			continue
-		}
-		s.serviceCh <- entries
-		query.WaitIndex = meta.LastIndex
+		s.Stop()
 	}
 }
 
-func (s *Server) registeredSelf(services []*consulapi.ServiceEntry) bool {
-	for _, service := range services {
-		if s.registration.Name == service.Service.Service &&
-			s.registration.ID == service.Service.ID {
-			return true
-		}
-	}
-	return false
-}
+func (s *Server) observeMembership() {
+	go s.observeServiceChanges()
+	go s.observeEvent()
 
-func (s *Server) bootstrap(services []*consulapi.ServiceEntry) {
-	peers := convertPeersFromService(services)
-	s.raft.raft.SetPeers(peers)
-	s.bootstrapped = true
-	Infof("server: bootstrapped with %v", peers)
-}
-
-func (s *Server) observeServiceChanges() {
+	Debug("server: starting monitoring membership")
 	for {
 		select {
 		case <-s.shutdownCh:
 			return
+		case e := <-s.eventCh:
+			if !s.leader {
+				continue
+			}
+
+			Infof("server: receiving %s event", e.Name)
+
+			p := string(e.Payload)
+			if strings.HasPrefix(p, delaydLeaveEvent) {
+				peer, err := net.ResolveTCPAddr("tcp", strings.TrimPrefix(p, delaydLeaveEvent))
+				if err != nil {
+					Errorf("server: leave-event has bad peer %s: %s", p, err)
+					continue
+				}
+
+				// reject if peer is pointing to self
+				if peer.String() == s.localAddr().String() {
+					Error("server: reject leave-event because it asks the leader to remove itself")
+					continue
+				}
+
+				if err := s.raft.raft.RemovePeer(peer).Error(); err != nil {
+					Errorf("server: failed to remove %s from peerset: %s", peer, err)
+					continue
+				}
+
+				Infof("server: %s was removed from peerset", peer)
+			} else {
+				Error("server: unknown event received:", p)
+			}
 		case services := <-s.serviceCh:
 			if !s.bootstrapped {
+				// wait until the number of registered services is equal or larger than expected
 				if len(services) >= s.config.BootstrapExpect && s.registeredSelf(services) {
 					s.bootstrap(services)
 				}
@@ -266,10 +306,78 @@ func (s *Server) observeServiceChanges() {
 				if !raft.PeerContained(curPeers, p) {
 					// new peer is found..
 					Infof("server: new peer %v is found on consul. adding...", p)
-					s.raft.raft.AddPeer(p)
+					if err := s.raft.raft.AddPeer(p).Error(); err != nil {
+						Error("server: failed to add peer", p)
+					}
 				}
 			}
 		}
+	}
+}
+
+func (s *Server) registeredSelf(services []*consulapi.ServiceEntry) bool {
+	for _, service := range services {
+		if s.registration.Name == service.Service.Service &&
+			s.registration.ID == service.Service.ID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) bootstrap(services []*consulapi.ServiceEntry) {
+	peers := raft.ExcludePeer(convertPeersFromService(services), s.localAddr())
+	if err := s.raft.raft.SetPeers(peers).Error(); err != nil {
+		Error("server: failed to setpeers:", err)
+	}
+	s.bootstrapped = true
+	Infof("server: bootstrapped with %v", peers)
+}
+
+func (s *Server) observeEvent() {
+	query := consulapi.QueryOptions{
+		AllowStale:        false,
+		RequireConsistent: true,
+	}
+	event := s.consul.Event()
+
+	Info("server: waiting for new delayd events...")
+	for {
+		entries, meta, err := event.List(delaydEvent, &query)
+		if err != nil {
+			Error(err)
+			continue
+		}
+
+		// See https://github.com/hashicorp/consul/blob/master/watch/funcs.go#L185
+		for i := 0; i < len(entries); i++ {
+			if event.IDToIndex(entries[i].ID) == query.WaitIndex {
+				entries = entries[i+1:]
+				break
+			}
+		}
+		for _, e := range entries {
+			s.eventCh <- e
+		}
+		query.WaitIndex = meta.LastIndex
+	}
+}
+
+func (s *Server) observeServiceChanges() {
+	query := consulapi.QueryOptions{
+		AllowStale:        false,
+		RequireConsistent: true,
+	}
+	health := s.consul.Health()
+	Info("server: waiting for node changes...")
+	for {
+		entries, meta, err := health.Service(delaydService, "", false, &query)
+		if err != nil {
+			Error(err)
+			continue
+		}
+		s.serviceCh <- entries
+		query.WaitIndex = meta.LastIndex
 	}
 }
 
@@ -365,6 +473,10 @@ func (s *Server) timerSend(t time.Time) {
 	}
 
 	Debug("server: synced raft after send.")
+}
+
+func (s *Server) localAddr() net.Addr {
+	return s.raft.transport.LocalAddr()
 }
 
 func convertPeersFromService(services []*consulapi.ServiceEntry) []net.Addr {
