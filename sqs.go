@@ -184,9 +184,10 @@ func (r *SQSReceiver) Close() {
 
 // SQSSender manages *sqs.SQS instance and a mapping of queue name to *sqs.Queue.
 type SQSSender struct {
-	sqs    *sqs.SQS
+	sqs *sqs.SQS
+
+	mu     sync.RWMutex
 	queues map[string]*sqs.Queue
-	mu     sync.Mutex
 }
 
 // NewSQSSender returns a SQSSender instance.
@@ -204,8 +205,8 @@ func (s *SQSSender) addQueue(n string, q *sqs.Queue) {
 }
 
 func (s *SQSSender) queueExists(n string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	_, found := s.queues[n]
 	return found
 }
