@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
@@ -103,6 +104,15 @@ func execute(c *cli.Context) {
 		config.Raft.Peers,
 		c.Bool("single"),
 	)
+
+	if c.String("cpuprofile") != "" {
+		f, err := os.Create(c.String("cpuprofile"))
+		if err != nil {
+			delayd.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 	s.Run()
 }
 
@@ -132,6 +142,11 @@ func main() {
 			Name:  "advertise",
 			Value: "",
 			Usage: "specify a advertise address for Raft RPC.",
+		},
+		cli.StringFlag{
+			Name:  "cpuprofile",
+			Value: "",
+			Usage: "specify a output file for cpu profiling.",
 		},
 		cli.IntFlag{
 			Name:  "bootstrap-expect",
