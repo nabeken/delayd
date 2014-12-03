@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
@@ -31,8 +32,12 @@ func installSigHandler(s Stopper) {
 	go func() {
 		select {
 		case <-ch:
+			// we should wait until s.Stop returns for 10 seconds.
+			time.AfterFunc(10*time.Second, func() {
+				delayd.Error("Server#Stop() does not return for 10 seconds. existing...")
+				os.Exit(0)
+			})
 			s.Stop()
-			os.Exit(0)
 		}
 	}()
 }
@@ -96,13 +101,22 @@ func execute(c *cli.Context) {
 	}
 	installSigHandler(s)
 
-	delayd.Infof("cli: starting delayd with %s. Listen: %s, Adv: %s, Peers: %v, Bootstrap: %v",
+	delayd.Infof("cli: starting delayd with %s. Listen: %s, Adv: %s, StaticPeers: %v, Bootstrap: %v",
 		c.String("broker"),
 		config.Raft.Listen,
 		config.Raft.Advertise,
 		config.Raft.Peers,
 		c.Bool("single"),
 	)
+
+	if c.String("cpuprofile") != "" {
+		f, err := os.Create(c.String("cpuprofile"))
+		if err != nil {
+			delayd.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 	s.Run()
 }
 
@@ -132,6 +146,11 @@ func main() {
 			Name:  "advertise",
 			Value: "",
 			Usage: "specify a advertise address for Raft RPC.",
+		},
+		cli.StringFlag{
+			Name:  "cpuprofile",
+			Value: "",
+			Usage: "specify a output file for cpu profiling.",
 		},
 		cli.IntFlag{
 			Name:  "bootstrap-expect",
