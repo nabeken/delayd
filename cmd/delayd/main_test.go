@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -22,9 +24,12 @@ import (
 )
 
 var (
-	flagAMQP = flag.Bool("amqp", false, "Enable integration tests against AMQP")
-	flagSQS  = flag.Bool("sqs", false, "Enable integration tests against SQS")
+	flagAMQP   = flag.Bool("amqp", false, "Enable integration tests against AMQP")
+	flagSQS    = flag.Bool("sqs", false, "Enable integration tests against SQS")
+	flagConsul = flag.Bool("consul", false, "Enable integraton tests with Consul")
 )
+
+const bootstrapExpect = 3
 
 func getFileAsString(path string) string {
 	dat, err := ioutil.ReadFile(path)
@@ -204,90 +209,196 @@ type TestMessage struct {
 	Delay int64
 }
 
-type testCase struct {
-	Sender   delayd.Sender
-	Receiver delayd.Receiver
-	Client   testClient
+type testServer struct {
+	*delayd.Server
+
+	config delayd.Config
 }
 
-type testCaseFunc func(config delayd.Config, out io.Writer) testCase
+func newTestServer(config delayd.Config, sender delayd.Sender, receiver delayd.Receiver) (*testServer, error) {
+	s, err := delayd.NewServer(config, sender, receiver)
+	if err != nil {
+		return nil, err
+	}
+	return &testServer{
+		Server: s,
+		config: config,
+	}, nil
+}
+
+func (s *testServer) Stop() {
+	s.Server.Stop()
+	if err := os.RemoveAll(s.config.DataDir); err != nil {
+		delayd.Error(err)
+	}
+}
+
+type (
+	testClientFunc  func(config delayd.Config, out io.Writer) (testClient, error)
+	testServerFunc  func(config delayd.Config) (*testServer, error)
+	testServersFunc func(config delayd.Config) ([]*testServer, error)
+)
+
+func (f testServerFunc) ServersFunc() testServersFunc {
+	return func(config delayd.Config) ([]*testServer, error) {
+		s, err := f(config)
+		if err != nil {
+			return nil, err
+		}
+		return []*testServer{s}, nil
+	}
+}
+
+func newSQS(config delayd.Config) (*sqs.SQS, error) {
+	auth, err := aws.GetAuth("", "", "", time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	region, found := aws.Regions[config.SQS.Region]
+	if !found {
+		return nil, fmt.Errorf("region %s is not valid", config.SQS.Region)
+	}
+	return sqs.New(auth, region), nil
+}
+
+func sqsTestServer(config delayd.Config) (*testServer, error) {
+	// create an ephemeral location for data storage during tests
+	dataDir, err := ioutil.TempDir("", "delayd-integ-test-sqs")
+	if err != nil {
+		return nil, err
+	}
+	config.DataDir = dataDir
+
+	s, err := newSQS(config)
+	if err != nil {
+		return nil, err
+	}
+
+	receiver, err := delayd.NewSQSReceiver(config.SQS, s)
+	if err != nil {
+		return nil, err
+	}
+
+	targetQueue := os.Getenv("DELAYD_TARGET_SQS")
+	if targetQueue == "" {
+		return nil, errors.New("DELAYD_TARGET_SQS must be set")
+	}
+
+	return newTestServer(config, delayd.NewSQSSender(s), receiver)
+}
+
+func sqsTestClient(config delayd.Config, out io.Writer) (testClient, error) {
+	s, err := newSQS(config)
+	if err != nil {
+		return nil, err
+	}
+
+	targetQueue := os.Getenv("DELAYD_TARGET_SQS")
+	if targetQueue == "" {
+		return nil, errors.New("DELAYD_TARGET_SQS must be set")
+	}
+
+	target := config.SQS
+	target.Queue = targetQueue
+	c, err := NewTestSQSClient(target, config.SQS, s, out)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
 
 func TestSQS(t *testing.T) {
 	if !*flagSQS {
 		t.Skip("Integration tests for SQS is disabled")
 	}
 
-	auth, err := aws.GetAuth("", "", "", time.Now())
-	if err != nil {
-		t.Fatal(err)
+	doIntegration(t, sqsTestClient, testServerFunc(sqsTestServer).ServersFunc())
+}
+
+func TestSQS_Multiple(t *testing.T) {
+	if !*flagSQS || !*flagConsul {
+		t.Skip("Integration tests for SQS with multiple delayd is disabled")
 	}
 
-	doIntegration(t, func(config delayd.Config, out io.Writer) testCase {
-		region, found := aws.Regions[config.SQS.Region]
-		if !found {
-			t.Fatalf("region %s is not valid", config.SQS.Region)
-		}
-		s := sqs.New(auth, region)
+	doIntegration_Multiple(t, sqsTestClient, sqsTestServer)
+}
 
-		receiver, err := delayd.NewSQSReceiver(config.SQS, s)
-		if err != nil {
-			t.Fatal(err)
-		}
+func amqpTestServer(config delayd.Config) (*testServer, error) {
+	// create an ephemeral location for data storage during tests
+	dataDir, err := ioutil.TempDir("", "delayd-integ-test-amqp")
+	if err != nil {
+		return nil, err
+	}
+	config.DataDir = dataDir
 
-		targetQueue := os.Getenv("DELAYD_TARGET_SQS")
-		if targetQueue == "" {
-			t.Fatal("DELAYD_SQS must be set")
-		}
+	sender, err := delayd.NewAMQPSender(config.AMQP.URL)
+	if err != nil {
+		return nil, err
+	}
 
-		target := config.SQS
-		target.Queue = targetQueue
-		c, err := NewTestSQSClient(target, config.SQS, s, out)
-		if err != nil {
-			t.Fatal(err)
-		}
+	receiver, err := delayd.NewAMQPReceiver(config.AMQP, delayd.RoutingKey)
+	if err != nil {
+		return nil, err
+	}
 
-		return testCase{
-			Sender:   delayd.NewSQSSender(s),
-			Receiver: receiver,
-			Client:   c,
-		}
-	})
+	return newTestServer(config, sender, receiver)
+}
+
+func amqpTestClient(config delayd.Config, out io.Writer) (testClient, error) {
+	target := config.AMQP
+	target.Exchange.Name = "delayd-test"
+	target.Queue.Name = ""
+	target.Queue.Bind = []string{target.Exchange.Name}
+
+	return NewTestAMQPClient(target, config.AMQP, out)
 }
 
 func TestAMQP(t *testing.T) {
 	if !*flagAMQP {
 		t.Skip("Integration tests for AMQP is disabled")
 	}
-
-	doIntegration(t, func(config delayd.Config, out io.Writer) testCase {
-		sender, err := delayd.NewAMQPSender(config.AMQP.URL)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		receiver, err := delayd.NewAMQPReceiver(config.AMQP, delayd.RoutingKey)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		target := config.AMQP
-		target.Exchange.Name = "delayd-test"
-		target.Queue.Name = ""
-		target.Queue.Bind = []string{target.Exchange.Name}
-		c, err := NewTestAMQPClient(target, config.AMQP, out)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		return testCase{
-			Sender:   sender,
-			Receiver: receiver,
-			Client:   c,
-		}
-	})
+	doIntegration(t, amqpTestClient, testServerFunc(amqpTestServer).ServersFunc())
 }
 
-func doIntegration(t *testing.T, f testCaseFunc) {
+func TestAMQP_Multiple(t *testing.T) {
+	if !*flagAMQP || !*flagConsul {
+		t.Skip("Integration tests for AMQP with multiple delayd is disabled")
+	}
+
+	doIntegration_Multiple(t, amqpTestClient, amqpTestServer)
+}
+
+func doIntegration_Multiple(t *testing.T, c testClientFunc, f testServerFunc) {
+	os.Setenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK", "127.0.0.1")
+	defer os.Setenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK", "")
+
+	sf := func(config delayd.Config) ([]*testServer, error) {
+		servers := []*testServer{}
+
+		config.UseConsul = *flagConsul
+		if config.UseConsul {
+			config.Raft.Single = false
+			config.BootstrapExpect = bootstrapExpect
+		}
+
+		for i := 0; i < bootstrapExpect; i++ {
+			sc := config
+			sc.Raft.Listen = net.JoinHostPort("127.0.0.1", strconv.FormatInt(7999-int64(i), 10))
+			sc.Raft.Advertise = net.JoinHostPort("127.0.0.1", strconv.FormatInt(7999-int64(i), 10))
+			s, err := f(sc)
+			if err != nil {
+				return nil, err
+			}
+			servers = append(servers, s)
+		}
+		return servers, nil
+	}
+
+	doIntegration(t, c, sf)
+}
+
+func doIntegration(t *testing.T, cf testClientFunc, sf testServersFunc) {
 	if testing.Short() {
 		t.Skip("Skipping test")
 	}
@@ -295,11 +406,9 @@ func doIntegration(t *testing.T, f testCaseFunc) {
 	assert := assert.New(t)
 
 	config, err := delayd.LoadConfig("delayd.toml")
-
-	// create an ephemeral location for data storage during tests
-	config.DataDir, err = ioutil.TempDir("", "delayd-testint")
-	assert.NoError(err)
-	defer os.Remove(config.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Use stdout instead of file
 	config.LogDir = ""
@@ -310,27 +419,36 @@ func doIntegration(t *testing.T, f testCaseFunc) {
 	}
 	defer out.Close()
 
-	testCase := f(config, out)
-	s, err := delayd.NewServer(config, testCase.Sender, testCase.Receiver)
+	client, err := cf(config, out)
 	if err != nil {
 		t.Fatal(err)
 	}
-	go s.Run()
-	defer s.Stop()
+
+	servers, err := sf(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range servers {
+		go s.Run()
+		defer s.Stop()
+	}
 
 	// Send messages to delayd exchange
 	msgs, err := loadTestMessages("testdata/in.toml")
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
+		return
 	}
-	if err := testCase.Client.SendMessages(msgs); err != nil {
-		t.Fatal(err)
+	if err := client.SendMessages(msgs); err != nil {
+		t.Error(err)
+		return
 	}
 
 	var wg sync.WaitGroup
 	wg.Add(len(msgs))
 	go func() {
-		for _ = range testCase.Client.RecvLoop() {
+		for _ = range client.RecvLoop() {
 			wg.Done()
 		}
 	}()
@@ -339,7 +457,7 @@ func doIntegration(t *testing.T, f testCaseFunc) {
 	wg.Wait()
 
 	// shutdown consumer
-	testCase.Client.Close()
+	client.Close()
 
 	// remove all whitespace for a more reliable compare
 	f1 := strings.Trim(getFileAsString("testdata/expected.txt"), "\n ")
@@ -347,6 +465,7 @@ func doIntegration(t *testing.T, f testCaseFunc) {
 
 	assert.Equal(f1, f2)
 	if err := os.Remove("testdata/out.txt"); err != nil {
-		t.Fatal(t)
+		t.Error(t)
+		return
 	}
 }
