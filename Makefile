@@ -35,13 +35,13 @@ test_amqp:
 	go test ./cmd/delayd/ -v -timeout=60s -amqp
 
 test_amqp_consul:
-	go test ./cmd/delayd/ -run='TestAMQP_Multiple' -v -timeout=60s -amqp -consul
+	go test ./cmd/delayd/ -run='TestAMQP_Multiple' -v -timeout=120s -amqp -consul
 
 test_sqs:
 	go test ./cmd/delayd/ -v -timeout=60s -sqs
 
 test_sqs_consul:
-	go test ./cmd/delayd/ -run='TestSQS_Multiple' -v -timeout=60s -sqs -consul
+	go test ./cmd/delayd/ -run='TestSQS_Multiple' -v -timeout=120s -sqs -consul
 
 check: lint
 	gofmt -l .
