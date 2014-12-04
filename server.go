@@ -360,6 +360,8 @@ func (s *Server) observeEvent() {
 		entries, meta, err := event.List(delaydEvent, &query)
 		if err != nil {
 			Error(err)
+			// FIXME: exponential
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 
@@ -388,6 +390,8 @@ func (s *Server) observeServiceChanges() {
 		entries, meta, err := health.Service(delaydService, "", false, &query)
 		if err != nil {
 			Error(err)
+			// FIXME: exponential
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 		s.serviceCh <- entries
