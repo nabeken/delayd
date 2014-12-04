@@ -2,10 +2,12 @@ package delayd
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/crowdmob/goamz/aws"
 	"github.com/crowdmob/goamz/sqs"
 )
 
@@ -240,4 +242,18 @@ func findMessageAttribute(attrs []sqs.MessageAttribute, name string) sqs.Message
 		}
 	}
 	return sqs.MessageAttribute{}
+}
+
+// NewSQS returns a SQS instance from Config.
+func NewSQS(config Config) (*sqs.SQS, error) {
+	auth, err := aws.GetAuth("", "", "", time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	region, found := aws.Regions[config.SQS.Region]
+	if !found {
+		return nil, fmt.Errorf("region %s is not valid", config.SQS.Region)
+	}
+	return sqs.New(auth, region), nil
 }

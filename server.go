@@ -118,7 +118,6 @@ func (s *Server) Run() {
 				continue
 			}
 
-			Debug("server: got new request entry:", entry)
 			b, err := entry.ToBytes()
 			if err != nil {
 				Error("server: error encoding entry:", err)
@@ -460,12 +459,12 @@ func (s *Server) timerSend(t time.Time) {
 		Fatal("server: could not read entries from db:", err)
 	}
 
-	if len(entries) > 1 {
-		Infof("server: sending %d entries", len(entries))
-	}
-
 	if len(entries) == 0 {
 		return
+	}
+
+	if len(entries) > 0 {
+		Infof("server: sending %d entries", len(entries))
 	}
 
 	for i, e := range entries {
