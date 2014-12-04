@@ -78,4 +78,4 @@ funccov:
 	go test -coverprofile /tmp/delayd-coverprof.cov ./...
 	go tool cover -func /tmp/delayd-coverprof.cov
 
-ci: config check test test_amqp
+ci: config check test test_amqp test_amqp_consul
