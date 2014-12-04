@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/armon/consul-api"
+	"github.com/cenkalti/backoff"
 	"github.com/hashicorp/raft"
 	"github.com/streadway/amqp"
 )
@@ -211,14 +212,19 @@ func (s *Server) startConsulBackend() {
 	go s.observeShutdownSignal()
 
 	Infof("server: waiting for joining %d nodes...", s.config.BootstrapExpect)
+
 	// Do our best for registering delayd service to Consul
-	for {
+	b := backoff.NewExponentialBackOff()
+	// never stop
+	b.MaxElapsedTime = 0
+
+	ticker := backoff.NewTicker(b)
+	for _ = range ticker.C {
 		if err := s.registerService(); err != nil {
-			Warn("failed to register service:", err)
-			// TODO: exponential backoff
-			time.Sleep(500 * time.Millisecond)
+			Warnf("failed to register service: %s. will retry after %s", err, b.NextBackOff())
 			continue
 		}
+		ticker.Stop()
 		break
 	}
 }
@@ -356,13 +362,13 @@ func (s *Server) observeEvent() {
 	event := s.consul.Event()
 
 	Info("server: waiting for new delayd events...")
-	for {
+
+	b := backoff.NewExponentialBackOff()
+	operation := func() error {
 		entries, meta, err := event.List(delaydEvent, &query)
 		if err != nil {
-			Error(err)
-			// FIXME: exponential
-			time.Sleep(500 * time.Millisecond)
-			continue
+			Warn("server: failed to retrieve events from consul. will retry after", b.NextBackOff())
+			return err
 		}
 
 		// See https://github.com/hashicorp/consul/blob/master/watch/funcs.go#L185
@@ -376,6 +382,14 @@ func (s *Server) observeEvent() {
 			s.eventCh <- e
 		}
 		query.WaitIndex = meta.LastIndex
+
+		return nil
+	}
+
+	for {
+		if err := backoff.Retry(operation, b); err != nil {
+			Warnf("failed to register service: %s. will retry...", err)
+		}
 	}
 }
 
@@ -385,17 +399,26 @@ func (s *Server) observeServiceChanges() {
 		RequireConsistent: true,
 	}
 	health := s.consul.Health()
+
 	Info("server: waiting for node changes...")
-	for {
+
+	b := backoff.NewExponentialBackOff()
+	operation := func() error {
 		entries, meta, err := health.Service(delaydService, "", false, &query)
 		if err != nil {
-			Error(err)
-			// FIXME: exponential
-			time.Sleep(500 * time.Millisecond)
-			continue
+			Warn("server: failed to retrieve services from consul. will retry after", b.NextBackOff())
+			return err
 		}
 		s.serviceCh <- entries
 		query.WaitIndex = meta.LastIndex
+
+		return nil
+	}
+
+	for {
+		if err := backoff.Retry(operation, b); err != nil {
+			Warnf("failed to monitor service changes: %s. will retry...", err)
+		}
 	}
 }
 

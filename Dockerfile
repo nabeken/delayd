@@ -8,6 +8,7 @@ RUN go-wrapper download \
   github.com/BurntSushi/toml \
   github.com/armon/consul-api \
   github.com/armon/gomdb \
+  github.com/cenkalti/backoff \
   github.com/codegangsta/cli \
   github.com/crowdmob/goamz/aws \
   github.com/crowdmob/goamz/sqs \
