@@ -280,11 +280,6 @@ func sqsTestServer(config delayd.Config) (*testServer, error) {
 		return nil, err
 	}
 
-	targetQueue := os.Getenv("DELAYD_TARGET_SQS")
-	if targetQueue == "" {
-		return nil, errors.New("DELAYD_TARGET_SQS must be set")
-	}
-
 	return newTestServer(config, delayd.NewSQSSender(s), receiver)
 }
 
