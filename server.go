@@ -1,6 +1,7 @@
 package delayd
 
 import (
+	"errors"
 	"log"
 	"net"
 	"os"
@@ -113,13 +114,15 @@ func (s *Server) Run() {
 			Debug("server: got new request entry:", entry)
 			b, err := entry.ToBytes()
 			if err != nil {
-				Error("server: error encoding entry: ", err)
+				Error("server: error encoding entry:", err)
 				continue
 			}
 
 			if err := s.raft.Add(b, raftMaxTime); err != nil {
-				Error("server: failed to add: ", err)
-				msg.Nack()
+				Error("server: failed to add:", err)
+				if nerr := msg.Nack(); nerr != nil {
+					Error("server: failed to nack:", err)
+				}
 				continue
 			}
 
@@ -188,6 +191,11 @@ func (s *Server) registerService() error {
 }
 
 func (s *Server) deregisterService() error {
+	if s.registration == nil {
+		Warn("server: can not deregister since this server is not registered")
+		return errors.New("delayd: register before deregister")
+	}
+
 	Info("server: deregistering delayd service from Consul")
 	agent := s.consul.Agent()
 	err := agent.ServiceDeregister(s.registration.ID)
@@ -198,6 +206,7 @@ func (s *Server) deregisterService() error {
 }
 
 func (s *Server) startConsulBackend() {
+	Info("server: starting consul backend goroutine")
 	go s.observeMembership()
 	go s.observeShutdownSignal()
 
@@ -205,6 +214,7 @@ func (s *Server) startConsulBackend() {
 	// Do our best for registering delayd service to Consul
 	for {
 		if err := s.registerService(); err != nil {
+			Warn("failed to register service:", err)
 			// TODO: exponential backoff
 			time.Sleep(500 * time.Millisecond)
 			continue
@@ -316,6 +326,10 @@ func (s *Server) observeMembership() {
 }
 
 func (s *Server) registeredSelf(services []*consulapi.ServiceEntry) bool {
+	if s.registration == nil {
+		return false
+	}
+
 	for _, service := range services {
 		if s.registration.Name == service.Service.Service &&
 			s.registration.ID == service.Service.ID {
@@ -346,6 +360,8 @@ func (s *Server) observeEvent() {
 		entries, meta, err := event.List(delaydEvent, &query)
 		if err != nil {
 			Error(err)
+			// FIXME: exponential
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 
@@ -374,6 +390,8 @@ func (s *Server) observeServiceChanges() {
 		entries, meta, err := health.Service(delaydService, "", false, &query)
 		if err != nil {
 			Error(err)
+			// FIXME: exponential
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 		s.serviceCh <- entries

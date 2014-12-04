@@ -163,6 +163,7 @@ func TestFSMSnapshotReapplies(t *testing.T) {
 	fsm2 := FSM{s2}
 
 	fsm2.Restore(&sink)
+	defer fsm2.store.Close()
 
 	_, entries, _ := fsm.store.GetAll()
 	assert.Equal(t, len(entries), 2)

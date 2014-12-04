@@ -31,11 +31,17 @@ update-deps:
 test:
 	go test -v -short -timeout=1s ./...
 
-testint:
+test_amqp:
 	go test ./cmd/delayd/ -v -timeout=60s -amqp
 
-testsqs:
+test_amqp_consul:
+	go test ./cmd/delayd/ -run='TestAMQP_Multiple' -v -timeout=60s -amqp -consul
+
+test_sqs:
 	go test ./cmd/delayd/ -v -timeout=60s -sqs
+
+test_sqs_consul:
+	go test ./cmd/delayd/ -run='TestSQS_Multiple' -v -timeout=60s -sqs -consul
 
 check: lint
 	gofmt -l .
@@ -72,4 +78,4 @@ funccov:
 	go test -coverprofile /tmp/delayd-coverprof.cov ./...
 	go tool cover -func /tmp/delayd-coverprof.cov
 
-ci: config check test testint
+ci: config check test test_amqp test_amqp_consul
