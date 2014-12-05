@@ -2,6 +2,7 @@ package delayd
 
 import (
 	"github.com/BurntSushi/toml"
+	"time"
 )
 
 // AMQPQueue holds configuration for the queue used by the AMQPReceiver
@@ -64,6 +65,8 @@ type Config struct {
 
 	DataDir string `toml:"data_dir"`
 	LogDir  string `toml:"log_dir"`
+
+	TickDuration time.Duration `toml:"tick_duration"`
 
 	BootstrapExpect int `toml:"bootstrap_expect"`
 

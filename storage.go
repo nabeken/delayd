@@ -24,15 +24,11 @@ const (
 
 var allDBs = []string{timeDB, keyDB, entryDB}
 
-// Storage is the database backend for persisting Entries via LMDB, and triggering
-// entry emission.
+// Storage is the database backend for persisting Entries via LMDB.
 type Storage struct {
 	env *mdb.Env
 	dbi *mdb.DBI
 	dir string
-
-	C <-chan time.Time
-	c chan<- time.Time
 }
 
 // NewStorage creates a new Storage instance. prefix is the base directory where
@@ -42,10 +38,6 @@ func NewStorage() (*Storage, error) {
 	if err := s.initDB(); err != nil {
 		return nil, err
 	}
-
-	c := make(chan time.Time, 10)
-	s.C = c
-	s.c = c
 
 	return s, nil
 }
@@ -198,18 +190,11 @@ func (s *Storage) Add(uuid []byte, e *Entry) error {
 		return err
 	}
 
-	ok, t, err := s.innerNextTime(txn, dbis[0])
+	err = txn.Commit()
 	if err != nil {
 		txn.Abort()
-		return err
 	}
-
-	err = txn.Commit()
-	if err == nil && ok {
-		s.c <- t
-	}
-
-	return nil
+	return err
 }
 
 func (s *Storage) innerGet(t time.Time, all bool) ([][]byte, []*Entry, error) {
@@ -367,15 +352,9 @@ func (s *Storage) Remove(uuid []byte) error {
 		return err
 	}
 
-	ok, t, err := s.innerNextTime(txn, dbis[0])
+	err = txn.Commit()
 	if err != nil {
 		txn.Abort()
-		return err
-	}
-
-	err = txn.Commit()
-	if err == nil && ok {
-		s.c <- t
 	}
 	return err
 }
