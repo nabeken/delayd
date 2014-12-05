@@ -90,6 +90,12 @@ func execute(c *cli.Context) {
 		config.UseConsul = c.Bool("consul")
 	}
 
+	if config.TickDuration == 0 {
+		config.TickDuration = delayd.DefaultTickDuration
+	} else {
+		config.TickDuration *= time.Millisecond
+	}
+
 	sender, receiver, err := getBroker(c.String("broker"), config)
 	if err != nil {
 		delayd.Fatal(err)

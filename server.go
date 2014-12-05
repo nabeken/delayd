@@ -33,21 +33,24 @@ const (
 	delaydLeaveEvent = delaydEvent + ":" + "leave:"
 )
 
+// DefaultTickDuration is used by default configuration for ticker
+const DefaultTickDuration = 500 * time.Millisecond
+
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
-	sender       Sender
-	receiver     Receiver
-	raft         *Raft
-	timer        *Timer
-	consul       *consulapi.Client
-	config       Config
-	registration *consulapi.AgentServiceRegistration
 	bootstrapped bool
+	config       Config
+	consul       *consulapi.Client
+	raft         *Raft
+	receiver     Receiver
+	registration *consulapi.AgentServiceRegistration
+	sender       Sender
 
-	shutdownCh chan bool
-	serviceCh  chan []*consulapi.ServiceEntry
 	eventCh    chan *consulapi.UserEvent
+	serviceCh  chan []*consulapi.ServiceEntry
+	shutdownCh chan bool
 	stopCh     chan struct{}
+	tickCh     <-chan time.Time
 
 	mu     sync.Mutex
 	leader bool
@@ -74,6 +77,10 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 		return nil, err
 	}
 
+	if c.TickDuration == 0 {
+		c.TickDuration = DefaultTickDuration
+	}
+
 	return &Server{
 		sender:     sender,
 		receiver:   receiver,
@@ -84,17 +91,16 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 		serviceCh:  make(chan []*consulapi.ServiceEntry),
 		eventCh:    make(chan *consulapi.UserEvent),
 		stopCh:     make(chan struct{}),
+		tickCh:     time.Tick(c.TickDuration),
 	}, nil
 }
 
 // Run starts server and begins its main loop.
 func (s *Server) Run() {
-	Info("server: starting delayd")
+	Info("server: starting delayd with ticking every", s.config.TickDuration)
 
-	s.timer = NewTimer(s.timerSend)
-
+	go s.tickerLoop()
 	go s.observeLeaderChanges()
-	go s.observeNextTime()
 
 	if s.config.UseConsul {
 		go s.startConsulBackend()
@@ -138,7 +144,6 @@ func (s *Server) Stop() {
 
 	// stop triggering new changes to the FSM
 	s.receiver.Close()
-	s.timer.Stop()
 
 	if s.config.UseConsul {
 		s.deregisterService()
@@ -154,16 +159,6 @@ func (s *Server) Stop() {
 	// stop mainloop
 	close(s.stopCh)
 	Info("server: terminated.")
-}
-
-func (s *Server) resetTimer() {
-	ok, t, err := s.raft.fsm.store.NextTime()
-	if err != nil {
-		Fatal("server: could not read initial send time from storage:", err)
-	}
-	if ok {
-		s.timer.Reset(t, true)
-	}
 }
 
 func (s *Server) registerService() error {
@@ -432,13 +427,11 @@ func (s *Server) observeLeaderChanges() {
 
 		if isLeader {
 			Debug("server: became raft leader")
-			s.resetTimer()
 			if err := s.receiver.Start(); err != nil {
 				Fatal("server: error while starting receiver:", err)
 			}
 		} else {
 			Debug("server: lost raft leadership")
-			s.timer.Pause()
 			if err := s.receiver.Pause(); err != nil {
 				Fatal("server: error while starting receiver:", err)
 			}
@@ -446,19 +439,16 @@ func (s *Server) observeLeaderChanges() {
 	}
 }
 
-// Listen to storage for next time changes on entry commits
-func (s *Server) observeNextTime() {
+func (s *Server) tickerLoop() {
 	for {
 		select {
 		case <-s.shutdownCh:
+			Info("server: ticker: receiving shutdown signal. existing.")
 			return
-		case t := <-s.raft.fsm.store.C:
-			s.mu.Lock()
+		case sendTime := <-s.tickCh:
 			if s.leader {
-				Debug("server: got time: ", t)
-				s.timer.Reset(t, false)
+				s.timerSend(sendTime)
 			}
-			s.mu.Unlock()
 		}
 	}
 }

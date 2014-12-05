@@ -6,6 +6,9 @@ data_dir = "/var/lib/delayd"
 # all logs should go stdout
 log_dir = ""
 
+# in ms
+tick_duration = 500
+
 [raft]
 single_node = true
 listen = "0.0.0.0:7999"

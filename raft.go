@@ -86,8 +86,6 @@ func (fsm *FSM) Restore(snap io.ReadCloser) error {
 	}
 
 	// swap in the restored storage, with time emission channels.
-	s.c = fsm.store.c
-	s.C = fsm.store.C
 	fsm.store.Close()
 	fsm.store = s
 
