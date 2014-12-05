@@ -45,8 +45,6 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	cmdType := l.Data[1]
 	switch Command(cmdType) {
 	case addCmd:
-		Debug("raft: applying add command")
-
 		uuid := l.Data[uuidOffset:entryOffset]
 		entry, err := entryFromBytes(l.Data[entryOffset:])
 		if err != nil {
@@ -58,7 +56,6 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 			return err
 		}
 	case rmCmd:
-		Debug("raft: applying rm command")
 		if err := fsm.store.Remove(l.Data[2:]); err != nil {
 			Error("raft: failed to rm entry:", err)
 			return err
@@ -304,7 +301,6 @@ func (r *Raft) Add(cmd []byte, timeout time.Duration) error {
 	}
 
 	h := append([]byte{logSchemaVersion, byte(addCmd)}, uuid...)
-	Debug(h)
 	future := r.raft.Apply(append(h, cmd...), timeout)
 	return future.Error()
 }

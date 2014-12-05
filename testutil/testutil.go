@@ -85,7 +85,6 @@ func (c *SQSClient) RecvLoop() <-chan struct{} {
 	go func() {
 		for msg := range c.Messages {
 			fmt.Fprintf(c.out, "%s\n", msg.Body)
-			delayd.Infof("sqs_client: written %s", string(msg.Body))
 			done <- struct{}{}
 			c.Queue.DeleteMessage(msg)
 		}
@@ -137,7 +136,6 @@ func NewAMQPClient(targetEx, delaydEx delayd.AMQPConfig, out io.Writer) (*AMQPCl
 // SendMessages sends test messages to delayd exchange.
 func (c *AMQPClient) SendMessages(msgs []Message) error {
 	for _, msg := range msgs {
-		delayd.Debug("sending a message:", msg.Value)
 		pm := amqp.Publishing{
 			DeliveryMode: amqp.Persistent,
 			Timestamp:    time.Now(),
@@ -169,7 +167,6 @@ func (c *AMQPClient) RecvLoop() <-chan struct{} {
 	go func() {
 		for msg := range c.deliveryCh {
 			fmt.Fprintf(c.out, "%s\n", msg.Body)
-			delayd.Infof("amqp_client: written %s", string(msg.Body))
 			done <- struct{}{}
 			// No need to ack here because autoack is enabled
 		}
