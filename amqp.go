@@ -168,6 +168,7 @@ func (a *AMQPReceiver) messageLoop() {
 		select {
 		case <-a.shutdown:
 			Debug("amqp: received signal to quit reading amqp, exiting goroutine")
+			close(a.c)
 			return
 		case delivery := <-a.messages:
 			deliverer := &AMQPDeliverer{Delivery: delivery}
@@ -229,7 +230,6 @@ func (a *AMQPReceiver) MessageCh() <-chan Message {
 func (a *AMQPReceiver) Close() {
 	a.Pause()
 	close(a.shutdown)
-	close(a.c)
 	a.AMQP.Close()
 }
 
