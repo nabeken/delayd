@@ -26,6 +26,7 @@ RUN cp -f delayd.toml.docker /etc/delayd.toml && \
 
 RUN go-wrapper download ./...
 RUN go install ./...
+RUN chown delayd:delayd -R /go
 
 VOLUME ["/var/lib/delayd"]
 
