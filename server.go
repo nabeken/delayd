@@ -79,6 +79,8 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 
 	if c.TickDuration == 0 {
 		c.TickDuration = DefaultTickDuration
+	} else {
+		c.TickDuration *= time.Millisecond
 	}
 
 	return &Server{
