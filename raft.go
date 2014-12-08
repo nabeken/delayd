@@ -295,7 +295,7 @@ func (r *Raft) Close() {
 //
 // Add panics if it cannot create a UUID
 func (r *Raft) Add(cmd []byte, timeout time.Duration) error {
-	uuid, err := newUUID()
+	uuid, err := NewUUID()
 	if err != nil {
 		Panic("raft: could not generate entry UUID")
 	}

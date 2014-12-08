@@ -198,11 +198,6 @@ func (a *AMQPReceiver) messageLoop() {
 			}
 			entry.Target = target
 
-			// optional key value for overwrite
-			if k, ok := delivery.Headers["delayd-key"].(string); ok {
-				entry.Key = k
-			}
-
 			// optional headers that will be relayed
 			entry.AMQP = &AMQPMessage{
 				ContentType:     delivery.ContentType,

@@ -12,7 +12,6 @@ import (
 
 const (
 	timeDB  = "time"    // map of emit time to entry uuid
-	keyDB   = "keys"    // map of user provided key to entry uuid. optional
 	entryDB = "entries" // map of uuid to entry
 
 	dbMaxMapSize32bit uint64 = 512 * 1024 * 1024       // 512MB maximum size
@@ -22,7 +21,7 @@ const (
 	dbFlags uint = mdb.NOMETASYNC | mdb.NOSYNC | mdb.NOTLS
 )
 
-var allDBs = []string{timeDB, keyDB, entryDB}
+var allDBs = []string{timeDB, entryDB}
 
 // Storage is the database backend for persisting Entries via LMDB.
 type Storage struct {
@@ -72,8 +71,8 @@ func (s *Storage) initDB() error {
 	}
 	Debug("storage: created temporary storage directory:", storageDir)
 
-	// 3 sub dbs: Entries, time index, and key index
-	if err := s.env.SetMaxDBs(mdb.DBI(3)); err != nil {
+	// 2 sub dbs: Entries and time index
+	if err := s.env.SetMaxDBs(mdb.DBI(2)); err != nil {
 		return err
 	}
 
@@ -140,35 +139,9 @@ func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, 
 
 // Add an Entry to the database.
 func (s *Storage) Add(uuid []byte, e *Entry) error {
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
+	txn, dbis, err := s.startTxn(false, timeDB, entryDB)
 	if err != nil {
 		return err
-	}
-
-	if e.Key != "" {
-		Debug("storage: adding entry has key:", e.Key)
-
-		ouuid, err := txn.Get(dbis[2], []byte(e.Key))
-		if err != nil && err != mdb.NotFound {
-			txn.Abort()
-			return err
-		}
-
-		if err == nil {
-			Debug("storage: exising key found; removing.")
-
-			err := s.innerRemove(txn, dbis, ouuid)
-			if err != nil {
-				txn.Abort()
-				return err
-			}
-		}
-
-		err = txn.Put(dbis[2], []byte(e.Key), uuid, 0)
-		if err != nil {
-			txn.Abort()
-			return err
-		}
 	}
 
 	k := uint64ToBytes(uint64(e.SendAt.UnixNano()))
@@ -312,37 +285,12 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) error {
 		return err
 	}
 
-	// check if the key exists before deleting.
-	cursor, err := txn.CursorOpen(dbis[2])
-	if err != nil {
-		Error("storage: error getting cursor for keys:", err)
-		return err
-	}
-	defer cursor.Close()
-
-	if e.Key == "" {
-		return nil
-	}
-
-	_, _, err = cursor.Get([]byte(e.Key), mdb.FIRST)
-	if err == mdb.NotFound {
-		return nil
-	}
-	if err != nil {
-		Error("storage: error reading cursor:", err)
-		return err
-	}
-
-	err = txn.Del(dbis[2], []byte(e.Key), nil)
-	if err != nil {
-		Error("storage: could not delete from keys:", err)
-	}
-	return err
+	return nil
 }
 
 // Remove an emitted entry from the db. uuid is the Entry's UUID.
 func (s *Storage) Remove(uuid []byte) error {
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
+	txn, dbis, err := s.startTxn(false, timeDB, entryDB)
 	if err != nil {
 		return err
 	}
