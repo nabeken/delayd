@@ -9,6 +9,8 @@ log_dir = ""
 # in ms
 tick_duration = 500
 
+use_consul = true
+
 [raft]
 single_node = true
 listen = "0.0.0.0:7999"
