@@ -79,6 +79,8 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 
 	if c.TickDuration == 0 {
 		c.TickDuration = DefaultTickDuration
+	} else {
+		c.TickDuration *= time.Millisecond
 	}
 
 	return &Server{
@@ -463,10 +465,6 @@ func (s *Server) timerSend(t time.Time) {
 		return
 	}
 
-	if len(entries) > 0 {
-		Infof("server: sending %d entries", len(entries))
-	}
-
 	for i, e := range entries {
 		if err := s.sender.Send(e); err != nil {
 			if aerr, ok := err.(*amqp.Error); ok && aerr.Code == 504 {
@@ -495,14 +493,11 @@ func (s *Server) timerSend(t time.Time) {
 	}
 
 	// ensure everyone is up to date
-	Debug("server: syncing raft after send.")
 	err = s.raft.SyncAll()
 	if err != nil {
 		Warn("server: lost raft leadership during sync after send.")
 		return
 	}
-
-	Debug("server: synced raft after send.")
 }
 
 func (s *Server) localAddr() net.Addr {

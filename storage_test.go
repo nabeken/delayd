@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	dummyUUID, _  = newUUID()
-	dummyUUID2, _ = newUUID()
+	dummyUUID, _  = NewUUID()
+	dummyUUID2, _ = NewUUID()
 )
 
 func innerTestAdd(t *testing.T, e *Entry) {
@@ -29,53 +29,12 @@ func innerTestAdd(t *testing.T, e *Entry) {
 	assert.Equal(t, entries[0], e)
 }
 
-func TestAddNoKey(t *testing.T) {
+func TestAddEntry(t *testing.T) {
 	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
 	innerTestAdd(t, e)
-}
-
-func TestAddWithKey(t *testing.T) {
-	e := &Entry{
-		Target: "something",
-		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
-		Key:    "user-key",
-	}
-	innerTestAdd(t, e)
-}
-
-func TestAddWithKeyReplacesExisting(t *testing.T) {
-	e := &Entry{
-		Target: "something",
-		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
-		Key:    "user-key",
-	}
-
-	e2 := &Entry{
-		Target: "something-else",
-		SendAt: time.Now().Add(time.Duration(110) * time.Minute),
-		Key:    "user-key",
-	}
-
-	s, err := NewStorage()
-	assert.Nil(t, err)
-	defer s.Close()
-
-	err = s.Add(dummyUUID, e)
-	assert.Nil(t, err)
-
-	err = s.Add(dummyUUID2, e2)
-	assert.Nil(t, err)
-
-	// since e is before e2, this would return both.
-	uuids, entries, err := s.Get(e2.SendAt)
-	assert.Nil(t, err)
-
-	assert.Equal(t, len(entries), 1)
-	assert.Equal(t, len(uuids), 1)
-	assert.Equal(t, entries[0], e2)
 }
 
 func assertContains(t *testing.T, l []*Entry, i *Entry) {
@@ -145,19 +104,10 @@ func innerTestRemove(t *testing.T, e *Entry) {
 	assert.Equal(t, len(uuids), 0)
 }
 
-func TestRemoveNoKey(t *testing.T) {
+func TestRemoveEntry(t *testing.T) {
 	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
-	}
-	innerTestRemove(t, e)
-}
-
-func TestRemoveWithKey(t *testing.T) {
-	e := &Entry{
-		Target: "something",
-		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
-		Key:    "user-key",
 	}
 	innerTestRemove(t, e)
 }
@@ -214,7 +164,6 @@ func TestNextTime(t *testing.T) {
 	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
-		Key:    "user-key",
 	}
 
 	err = s.Add(dummyUUID, e)

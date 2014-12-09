@@ -7,7 +7,8 @@ import (
 	"io"
 )
 
-func newUUID() ([]byte, error) {
+// NewUUID returns uuid
+func NewUUID() ([]byte, error) {
 	uuid := make([]byte, 16)
 	n, err := io.ReadFull(rand.Reader, uuid)
 	if n != len(uuid) {

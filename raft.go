@@ -45,8 +45,6 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	cmdType := l.Data[1]
 	switch Command(cmdType) {
 	case addCmd:
-		Debug("raft: applying add command")
-
 		uuid := l.Data[uuidOffset:entryOffset]
 		entry, err := entryFromBytes(l.Data[entryOffset:])
 		if err != nil {
@@ -58,7 +56,6 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 			return err
 		}
 	case rmCmd:
-		Debug("raft: applying rm command")
 		if err := fsm.store.Remove(l.Data[2:]); err != nil {
 			Error("raft: failed to rm entry:", err)
 			return err
@@ -298,13 +295,12 @@ func (r *Raft) Close() {
 //
 // Add panics if it cannot create a UUID
 func (r *Raft) Add(cmd []byte, timeout time.Duration) error {
-	uuid, err := newUUID()
+	uuid, err := NewUUID()
 	if err != nil {
 		Panic("raft: could not generate entry UUID")
 	}
 
 	h := append([]byte{logSchemaVersion, byte(addCmd)}, uuid...)
-	Debug(h)
 	future := r.raft.Apply(append(h, cmd...), timeout)
 	return future.Error()
 }

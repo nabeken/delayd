@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
@@ -115,14 +114,6 @@ func execute(c *cli.Context) {
 		c.Bool("single"),
 	)
 
-	if c.String("cpuprofile") != "" {
-		f, err := os.Create(c.String("cpuprofile"))
-		if err != nil {
-			delayd.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	}
 	s.Run()
 }
 

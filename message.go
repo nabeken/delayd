@@ -64,9 +64,6 @@ type Entry struct {
 	Target string
 	Body   []byte
 
-	// Optional
-	Key string
-
 	// AMQP specific message
 	AMQP *AMQPMessage
 

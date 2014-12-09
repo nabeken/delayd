@@ -158,13 +158,8 @@ func (r *SQSReceiver) messageLoop() {
 				deliverer.Ack()
 				continue
 			}
+
 			entry.Target = targetAttr.Value.StringValue
-
-			keyAttr := findMessageAttribute(msg.MessageAttribute, "delayd-key")
-			if keyAttr.Value.DataType == "String" && keyAttr.Value.StringValue != "" {
-				entry.Key = keyAttr.Value.StringValue
-			}
-
 			entry.SQS = &SQSMessage{
 				MessageID: msg.MessageId,
 			}

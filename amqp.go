@@ -168,6 +168,7 @@ func (a *AMQPReceiver) messageLoop() {
 		select {
 		case <-a.shutdown:
 			Debug("amqp: received signal to quit reading amqp, exiting goroutine")
+			close(a.c)
 			return
 		case delivery := <-a.messages:
 			deliverer := &AMQPDeliverer{Delivery: delivery}
@@ -197,11 +198,6 @@ func (a *AMQPReceiver) messageLoop() {
 			}
 			entry.Target = target
 
-			// optional key value for overwrite
-			if k, ok := delivery.Headers["delayd-key"].(string); ok {
-				entry.Key = k
-			}
-
 			// optional headers that will be relayed
 			entry.AMQP = &AMQPMessage{
 				ContentType:     delivery.ContentType,
@@ -229,7 +225,6 @@ func (a *AMQPReceiver) MessageCh() <-chan Message {
 func (a *AMQPReceiver) Close() {
 	a.Pause()
 	close(a.shutdown)
-	close(a.c)
 	a.AMQP.Close()
 }
 
