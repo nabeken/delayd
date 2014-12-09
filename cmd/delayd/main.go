@@ -41,17 +41,20 @@ func installSigHandler(s Stopper) {
 	}()
 }
 
-func execute(c *cli.Context) {
+func mergeConfig(c *cli.Context) delayd.Config {
+	// load toml
 	config, err := delayd.LoadConfig(c.String("config"))
 	if err != nil {
 		delayd.Fatal("cli: unable to read config file:", err)
 	}
 
+	// merge envvars
 	if url := os.Getenv("AMQP_URL"); url != "" {
 		config.AMQP.URL = url
 	}
-	if sqsQueue := os.Getenv("SQS_QUEUE_NAME"); sqsQueue != "" {
-		config.SQS.Queue = sqsQueue
+
+	if consulHost := os.Getenv("CONSUL_HOST"); consulHost != "" {
+		config.Consul.Address = consulHost
 	}
 
 	if raftHost := os.Getenv("RAFT_HOST"); raftHost != "" {
@@ -60,6 +63,15 @@ func execute(c *cli.Context) {
 		config.Raft.Listen = net.JoinHostPort(configRaftHost, c.String("port"))
 	}
 
+	if peers := os.Getenv("RAFT_PEERS"); peers != "" {
+		config.Raft.Peers = strings.Split(peers, ",")
+	}
+
+	if sqsQueue := os.Getenv("SQS_QUEUE_NAME"); sqsQueue != "" {
+		config.SQS.Queue = sqsQueue
+	}
+
+	// merge flags
 	if advertise := c.String("advertise"); advertise == "" {
 		advIP, err := delayd.GetPrivateIP()
 		if err != nil {
@@ -71,30 +83,26 @@ func execute(c *cli.Context) {
 		config.Raft.Advertise = net.JoinHostPort(advertise, c.String("port"))
 	}
 
-	if peers := os.Getenv("RAFT_PEERS"); peers != "" {
-		config.Raft.Peers = strings.Split(peers, ",")
-	}
-
 	config.Raft.Single = c.Bool("single")
+	if !config.Raft.Single {
+		config.UseConsul = c.Bool("consul")
+	}
 
 	if config.BootstrapExpect == 0 {
 		config.BootstrapExpect = c.Int("bootstrap-expect")
 	}
 
-	if consulHost := os.Getenv("CONSUL_HOST"); consulHost != "" {
-		config.Consul.Address = consulHost
-	}
-
-	if !config.UseConsul {
-		config.UseConsul = c.Bool("consul")
-	}
-
-	if config.TickDuration == 0 {
-		config.TickDuration = delayd.DefaultTickDuration
-	} else {
+	if config.TickDuration > 0 {
 		config.TickDuration *= time.Millisecond
+	} else {
+		config.TickDuration = delayd.DefaultTickDuration
 	}
 
+	return config
+}
+
+func execute(c *cli.Context) {
+	config := mergeConfig(c)
 	sender, receiver, err := getBroker(c.String("broker"), config)
 	if err != nil {
 		delayd.Fatal(err)
@@ -143,11 +151,6 @@ func main() {
 			Name:  "advertise",
 			Value: "",
 			Usage: "specify a advertise address for Raft RPC.",
-		},
-		cli.StringFlag{
-			Name:  "cpuprofile",
-			Value: "",
-			Usage: "specify a output file for cpu profiling.",
 		},
 		cli.IntFlag{
 			Name:  "bootstrap-expect",

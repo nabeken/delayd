@@ -4,6 +4,8 @@ log_dir = "/var/log/delayd"
 # in ms
 tick_duration = 500
 
+use_consul = false
+
 [raft]
 single_node = true
 
