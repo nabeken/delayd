@@ -74,8 +74,7 @@ func (s *Storage) InitDB(flags uint) error {
 	}
 	Debug("storage: created temporary storage directory:", storageDir)
 
-	// 2 sub dbs: Entries and time index
-	if err := s.env.SetMaxDBs(mdb.DBI(2)); err != nil {
+	if err := s.env.SetMaxDBs(mdb.DBI(len(allDBs))); err != nil {
 		return err
 	}
 
@@ -142,7 +141,7 @@ func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, 
 
 // Add an Entry to the database.
 func (s *Storage) Add(uuid []byte, e *Entry) error {
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB)
+	txn, dbis, err := s.startTxn(false, allDBs...)
 	if err != nil {
 		return err
 	}
@@ -174,7 +173,7 @@ func (s *Storage) Add(uuid []byte, e *Entry) error {
 }
 
 func (s *Storage) innerGet(t time.Time, all bool) ([][]byte, []*Entry, error) {
-	txn, dbis, err := s.startTxn(true, timeDB, entryDB)
+	txn, dbis, err := s.startTxn(true, allDBs...)
 	if err != nil {
 		Error("storage: error creating transaction:", err)
 		return nil, nil, err
@@ -293,7 +292,7 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) error {
 
 // Remove an emitted entry from the db. uuid is the Entry's UUID.
 func (s *Storage) Remove(uuid []byte) error {
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB)
+	txn, dbis, err := s.startTxn(false, allDBs...)
 	if err != nil {
 		return err
 	}
