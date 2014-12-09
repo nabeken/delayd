@@ -315,18 +315,18 @@ func getFile(path string) string {
 	return string(dat)
 }
 
-func RaftServers(bootstrapExpect int, f ServerFunc) ServersFunc {
+func RaftServers(bootstrapExpect int, listen string, f ServerFunc) ServersFunc {
 	return func(config delayd.Config) ([]*Server, error) {
 		servers := []*Server{}
 
 		config.UseConsul = true
-		config.Raft.Single = false
 		config.BootstrapExpect = bootstrapExpect
+		config.Raft.Single = false
+		config.Raft.Advertise = ""
 
 		for i := 0; i < bootstrapExpect; i++ {
 			sc := config
-			sc.Raft.Listen = net.JoinHostPort("127.0.0.1", strconv.FormatInt(7999-int64(i), 10))
-			sc.Raft.Advertise = net.JoinHostPort("127.0.0.1", strconv.FormatInt(7999-int64(i), 10))
+			sc.Raft.Listen = net.JoinHostPort(listen, strconv.FormatInt(7999-int64(i), 10))
 			s, err := f(sc)
 			if err != nil {
 				return nil, err
@@ -338,7 +338,7 @@ func RaftServers(bootstrapExpect int, f ServerFunc) ServersFunc {
 }
 
 func DoIntegrationMultiple(t *testing.T, bootstrapExpect int, c ClientFunc, f ServerFunc) {
-	sf := RaftServers(bootstrapExpect, f)
+	sf := RaftServers(bootstrapExpect, "127.0.0.1", f)
 	DoIntegration(t, c, sf)
 }
 

@@ -22,6 +22,8 @@ var (
 	flagProfile   = flag.String("p", "", "Specify a output file for cpu profiling.")
 )
 
+const raftHost = "127.0.0.1"
+
 // mps returns message per seconds.
 func mps(n int, d time.Duration) float64 {
 	return float64(n) / d.Seconds()
@@ -63,7 +65,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	raftServers, err := testutil.RaftServers(*flagNumServer, testutil.AMQPServerFunc)(config)
+	raftServers, err := testutil.RaftServers(
+		*flagNumServer,
+		raftHost,
+		testutil.AMQPServerFunc,
+	)(config)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -93,7 +99,7 @@ func main() {
 	go func() {
 		for _ = range client.RecvLoop() {
 			acked++
-			if acked > 10000 {
+			if acked > n {
 				continue
 			}
 			wg.Done()
