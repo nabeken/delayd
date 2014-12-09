@@ -90,9 +90,14 @@ func main() {
 	delayd.Infof("sent %d messages for %s, %f msg/s", n, durationSent, mps(n, durationSent))
 
 	var wg sync.WaitGroup
-	wg.Add(len(msgs))
+	wg.Add(n)
+	acked := 0
 	go func() {
 		for _ = range client.RecvLoop() {
+			acked++
+			if acked > 10000 {
+				continue
+			}
 			wg.Done()
 		}
 	}()
@@ -109,4 +114,8 @@ func main() {
 
 	// shutdown consumer
 	client.Close()
+
+	if acked > n {
+		delayd.Infof("%d messages are duplicated", acked - n)
+	}
 }
