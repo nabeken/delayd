@@ -20,6 +20,7 @@ var (
 	flagDuration  = flag.Duration("d", 1*time.Second, "Specify a delay. Default is 1s.")
 	flagConfig    = flag.String("c", "/etc/delayd.toml", "Specify a config. Default is /etc/delayd.toml")
 	flagProfile   = flag.String("p", "", "Specify a output file for cpu profiling.")
+	flagNoServer  = flag.Bool("no-server", false, "Set true if you need only client")
 )
 
 const raftHost = "127.0.0.1"
@@ -65,18 +66,23 @@ func main() {
 		log.Fatal(err)
 	}
 
-	raftServers, err := testutil.RaftServers(
-		*flagNumServer,
-		raftHost,
-		testutil.AMQPServerFunc,
-	)(config)
-	if err != nil {
-		log.Fatal(err)
-	}
+	if !*flagNoServer {
+		delayd.Info("launching servers and waiting for messages")
+		raftServers, err := testutil.RaftServers(
+			*flagNumServer,
+			raftHost,
+			testutil.AMQPServerFunc,
+		)(config)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	for _, s := range raftServers {
-		go s.Run()
-		defer s.Stop()
+		for _, s := range raftServers {
+			go s.Run()
+			defer s.Stop()
+		}
+	} else {
+		delayd.Info("-no-server is specified. Waiting for messages")
 	}
 
 	// Send messages to delayd exchange

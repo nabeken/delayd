@@ -74,9 +74,6 @@ func (c *SQSClient) SendMessages(msgs []Message) error {
 			"delayd-delay":  strconv.FormatInt(msg.Delay, 10),
 			"delayd-target": c.Config.Queue,
 		}
-		if msg.Key != "" {
-			attrs["delayd-key"] = msg.Key
-		}
 		if _, err := c.delaydQueue.SendMessageWithAttributes(msg.Value, attrs); err != nil {
 			return err
 		}
@@ -149,7 +146,6 @@ func (c *AMQPClient) SendMessages(msgs []Message) error {
 			Headers: amqp.Table{
 				"delayd-delay":  msg.Delay,
 				"delayd-target": c.Config.Exchange.Name,
-				"delayd-key":    msg.Key,
 			},
 			Body: []byte(msg.Value),
 		}
