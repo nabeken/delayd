@@ -12,7 +12,7 @@ install:
 
 before_script:
 - "sudo service consul stop || :"
-- "/sbin/start-stop-daemon --start --quiet --pidfile /tmp/consul.pid --make-pidfile --background --exec /usr/bin/consul -- agent -server -bootstrap-expect 1 -data-dir /tmp/consul"
+- "/sbin/start-stop-daemon --start --quiet --pidfile /tmp/consul.pid --make-pidfile --background --exec /usr/bin/consul -- agent -server -bootstrap-expect 1 -data-dir /tmp/consul -advertise 127.0.0.1"
 
 script:
   - make ci

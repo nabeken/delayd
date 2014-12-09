@@ -15,11 +15,14 @@ import (
 )
 
 var (
-	flagNumMsg   = flag.Int("n", 10, "Specify a number of messages to send")
-	flagDuration = flag.Duration("d", 1*time.Second, "Specify a delay. Default is 1s.")
-	flagConfig   = flag.String("c", "/etc/delayd.toml", "Specify a config. Default is /etc/delayd.toml")
-	flagProfile  = flag.String("p", "", "Specify a output file for cpu profiling.")
+	flagNumMsg    = flag.Int("n", 10, "Specify a number of messages to send")
+	flagNumServer = flag.Int("s", 3, "Specify a number of servers")
+	flagDuration  = flag.Duration("d", 1*time.Second, "Specify a delay. Default is 1s.")
+	flagConfig    = flag.String("c", "/etc/delayd.toml", "Specify a config. Default is /etc/delayd.toml")
+	flagProfile   = flag.String("p", "", "Specify a output file for cpu profiling.")
 )
+
+const raftHost = "127.0.0.1"
 
 // mps returns message per seconds.
 func mps(n int, d time.Duration) float64 {
@@ -48,16 +51,6 @@ func main() {
 	// Use stdout instead of file
 	config.LogDir = ""
 
-	client, err := testutil.AMQPClientFunc(config, ioutil.Discard)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	s, err := testutil.AMQPServerFunc(config)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	if *flagProfile != "" {
 		f, err := os.Create(*flagProfile)
 		if err != nil {
@@ -67,8 +60,24 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	go s.Run()
-	defer s.Stop()
+	client, err := testutil.AMQPClientFunc(config, ioutil.Discard)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	raftServers, err := testutil.RaftServers(
+		*flagNumServer,
+		raftHost,
+		testutil.AMQPServerFunc,
+	)(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, s := range raftServers {
+		go s.Run()
+		defer s.Stop()
+	}
 
 	// Send messages to delayd exchange
 	msgs := generateMessages(*flagNumMsg, *flagDuration)
@@ -85,9 +94,14 @@ func main() {
 	delayd.Infof("sent %d messages for %s, %f msg/s", n, durationSent, mps(n, durationSent))
 
 	var wg sync.WaitGroup
-	wg.Add(len(msgs))
+	wg.Add(n)
+	acked := 0
 	go func() {
 		for _ = range client.RecvLoop() {
+			acked++
+			if acked > n {
+				continue
+			}
 			wg.Done()
 		}
 	}()
@@ -104,4 +118,8 @@ func main() {
 
 	// shutdown consumer
 	client.Close()
+
+	if acked > n {
+		delayd.Infof("%d messages are duplicated", acked-n)
+	}
 }

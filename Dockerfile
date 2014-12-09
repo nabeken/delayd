@@ -15,6 +15,7 @@ RUN go-wrapper download \
   github.com/hashicorp/raft \
   github.com/hashicorp/raft-mdb \
   github.com/streadway/amqp \
+  github.com/stretchr/testify \
   github.com/ugorji/go/codec \
   && :
 

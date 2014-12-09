@@ -72,6 +72,34 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 		return nil, err
 	}
 
+	// Retrieve advertise
+	if c.UseConsul && c.Raft.Advertise == "" {
+		_, port, err := net.SplitHostPort(c.Raft.Listen)
+		if err != nil {
+			return nil, err
+		}
+
+		b := backoff.NewExponentialBackOff()
+		operation := func() error {
+			self, err := consul.Agent().Self()
+			if err != nil {
+				return err
+			}
+
+			addr, ok := self["Config"]["AdvertiseAddr"].(string)
+			if !ok {
+				return err
+			}
+
+			c.Raft.Advertise = net.JoinHostPort(addr, port)
+			return nil
+		}
+
+		if err := backoff.Retry(operation, b); err != nil {
+			return nil, err
+		}
+	}
+
 	raft, err := NewRaft(c.Raft, c.DataDir, c.LogDir)
 	if err != nil {
 		return nil, err
@@ -99,7 +127,11 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 
 // Run starts server and begins its main loop.
 func (s *Server) Run() {
-	Info("server: starting delayd with ticking every", s.config.TickDuration)
+	Infof("server: starting delayd with ticking every %s. Listen: %s, Adv: %s",
+		s.config.TickDuration,
+		s.config.Raft.Listen,
+		s.config.Raft.Advertise,
+	)
 
 	go s.tickerLoop()
 	go s.observeLeaderChanges()
@@ -474,7 +506,7 @@ func (s *Server) timerSend(t time.Time) {
 				// to be notified on. We do not attempt to make this for them,
 				// as we don't know what exchange options they would want, we
 				// simply drop this message, other errors are fatal
-				Warnf("server: channel/connection not set up for exchange `%s`, message will be deleted", e.Target, aerr)
+				Warnf("server: channel/connection not set up for exchange `%s`, message will be deleted: %s", e.Target, aerr)
 			}
 
 			// FIXME: I don't think Fatal here is right way.
@@ -508,13 +540,7 @@ func convertPeersFromService(services []*consulapi.ServiceEntry) []net.Addr {
 	peers := []net.Addr{}
 	for _, service := range services {
 		port := strconv.FormatInt(int64(service.Service.Port), 10)
-		// Currently, IP address in consul's service catalog can not be set in registration.
-		// This limitation is so bad for testing multiple delayd instance with 1 agent.
-		// See https://github.com/hashicorp/consul/issues/229 for discussion
 		address := service.Node.Address
-		if tweak := os.Getenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK"); tweak != "" {
-			address = tweak
-		}
 		peer, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(address, port))
 		if err != nil {
 			Fatal("server: bad peer:", err)
