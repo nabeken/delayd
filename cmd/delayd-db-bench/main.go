@@ -6,11 +6,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/armon/gomdb"
+
 	"github.com/nabeken/delayd"
 )
 
 var (
 	flagNumMsg = flag.Int("n", 10, "Specify a number of messages to write")
+	flagSync   = flag.Bool("s", true, "Use fsync for LMDB")
 )
 
 // eps returns entry per seconds.
@@ -49,8 +52,14 @@ func main() {
 	flag.Parse()
 	n := *flagNumMsg
 
-	s, err := delayd.NewStorage()
-	if err != nil {
+	s := &delayd.Storage{}
+	var flags uint = mdb.NOTLS
+
+	if !*flagSync {
+		flags |= mdb.NOMETASYNC | mdb.NOSYNC
+	}
+
+	if err := s.InitDB(flags); err != nil {
 		log.Fatal(err)
 	}
 

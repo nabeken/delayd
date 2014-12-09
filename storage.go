@@ -34,14 +34,17 @@ type Storage struct {
 // data is written on-disk.
 func NewStorage() (*Storage, error) {
 	s := &Storage{}
-	if err := s.initDB(); err != nil {
+
+	if err := s.InitDB(dbFlags); err != nil {
 		return nil, err
 	}
 
 	return s, nil
 }
 
-func (s *Storage) initDB() error {
+// InitDB initializes LMDB with flags.
+// If you need to initialize LMDB with specific flags, you can use this method.
+func (s *Storage) InitDB(flags uint) error {
 	env, err := mdb.NewEnv()
 	if err != nil {
 		return err
@@ -76,7 +79,7 @@ func (s *Storage) initDB() error {
 		return err
 	}
 
-	if err := s.env.Open(storageDir, dbFlags, 0755); err != nil {
+	if err := s.env.Open(storageDir, flags, 0755); err != nil {
 		return err
 	}
 
