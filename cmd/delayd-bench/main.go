@@ -15,10 +15,11 @@ import (
 )
 
 var (
-	flagNumMsg   = flag.Int("n", 10, "Specify a number of messages to send")
-	flagDuration = flag.Duration("d", 1*time.Second, "Specify a delay. Default is 1s.")
-	flagConfig   = flag.String("c", "/etc/delayd.toml", "Specify a config. Default is /etc/delayd.toml")
-	flagProfile  = flag.String("p", "", "Specify a output file for cpu profiling.")
+	flagNumMsg    = flag.Int("n", 10, "Specify a number of messages to send")
+	flagNumServer = flag.Int("s", 3, "Specify a number of servers")
+	flagDuration  = flag.Duration("d", 1*time.Second, "Specify a delay. Default is 1s.")
+	flagConfig    = flag.String("c", "/etc/delayd.toml", "Specify a config. Default is /etc/delayd.toml")
+	flagProfile   = flag.String("p", "", "Specify a output file for cpu profiling.")
 )
 
 // mps returns message per seconds.
@@ -48,16 +49,6 @@ func main() {
 	// Use stdout instead of file
 	config.LogDir = ""
 
-	client, err := testutil.AMQPClientFunc(config, ioutil.Discard)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	s, err := testutil.AMQPServerFunc(config)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	if *flagProfile != "" {
 		f, err := os.Create(*flagProfile)
 		if err != nil {
@@ -67,8 +58,22 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	go s.Run()
-	defer s.Stop()
+	client, err := testutil.AMQPClientFunc(config, ioutil.Discard)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	os.Setenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK", "127.0.0.1")
+	defer os.Setenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK", "")
+	raftServers, err := testutil.RaftServers(*flagNumServer, testutil.AMQPServerFunc)(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, s := range raftServers {
+		go s.Run()
+		defer s.Stop()
+	}
 
 	// Send messages to delayd exchange
 	msgs := generateMessages(*flagNumMsg, *flagDuration)
