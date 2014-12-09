@@ -338,8 +338,6 @@ func RaftServers(bootstrapExpect int, f ServerFunc) ServersFunc {
 }
 
 func DoIntegrationMultiple(t *testing.T, bootstrapExpect int, c ClientFunc, f ServerFunc) {
-	os.Setenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK", "127.0.0.1")
-	defer os.Setenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK", "")
 	sf := RaftServers(bootstrapExpect, f)
 	DoIntegration(t, c, sf)
 }

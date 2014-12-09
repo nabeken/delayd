@@ -63,8 +63,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	os.Setenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK", "127.0.0.1")
-	defer os.Setenv("DELAYD_CONSUL_AGENT_SERVICE_ADDRESS_TWEAK", "")
 	raftServers, err := testutil.RaftServers(*flagNumServer, testutil.AMQPServerFunc)(config)
 	if err != nil {
 		log.Fatal(err)
@@ -116,6 +114,6 @@ func main() {
 	client.Close()
 
 	if acked > n {
-		delayd.Infof("%d messages are duplicated", acked - n)
+		delayd.Infof("%d messages are duplicated", acked-n)
 	}
 }

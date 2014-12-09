@@ -71,16 +71,25 @@ func mergeConfig(c *cli.Context) delayd.Config {
 		config.SQS.Queue = sqsQueue
 	}
 
-	// merge flags
-	if advertise := c.String("advertise"); advertise == "" {
-		advIP, err := delayd.GetPrivateIP()
-		if err != nil {
-			delayd.Fatal("failed to get advertise address:", err)
-		}
+	_, port, err := net.SplitHostPort(config.Raft.Listen)
+	if err != nil {
+		delayd.Fatal("cli: failed to parse raft listen address")
+	}
 
-		config.Raft.Advertise = net.JoinHostPort(advIP.String(), c.String("port"))
+	// merge flags
+	if !config.UseConsul {
+		if advertise := c.String("advertise"); advertise == "" {
+			advIP, err := delayd.GetPrivateIP()
+			if err != nil {
+				delayd.Fatal("failed to get advertise address:", err)
+			}
+
+			config.Raft.Advertise = net.JoinHostPort(advIP.String(), port)
+		} else {
+			config.Raft.Advertise = advertise
+		}
 	} else {
-		config.Raft.Advertise = net.JoinHostPort(advertise, c.String("port"))
+		config.Raft.Advertise = ""
 	}
 
 	config.Raft.Single = c.Bool("single")
@@ -113,14 +122,6 @@ func execute(c *cli.Context) {
 		delayd.Fatal(err)
 	}
 	installSigHandler(s)
-
-	delayd.Infof("cli: starting delayd with %s. Listen: %s, Adv: %s, StaticPeers: %v, Bootstrap: %v",
-		c.String("broker"),
-		config.Raft.Listen,
-		config.Raft.Advertise,
-		config.Raft.Peers,
-		c.Bool("single"),
-	)
 
 	s.Run()
 }
