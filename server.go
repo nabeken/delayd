@@ -474,7 +474,7 @@ func (s *Server) timerSend(t time.Time) {
 				// to be notified on. We do not attempt to make this for them,
 				// as we don't know what exchange options they would want, we
 				// simply drop this message, other errors are fatal
-				Warnf("server: channel/connection not set up for exchange `%s`, message will be deleted", e.Target, aerr)
+				Warnf("server: channel/connection not set up for exchange `%s`, message will be deleted: %s", e.Target, aerr)
 			}
 
 			// FIXME: I don't think Fatal here is right way.
