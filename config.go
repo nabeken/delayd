@@ -1,8 +1,9 @@
 package delayd
 
 import (
-	"github.com/BurntSushi/toml"
 	"time"
+
+	"github.com/BurntSushi/toml"
 )
 
 // AMQPQueue holds configuration for the queue used by the AMQPReceiver
