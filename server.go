@@ -83,6 +83,7 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 		operation := func() error {
 			self, err := consul.Agent().Self()
 			if err != nil {
+				Warnf("failed to get advertise: %s. will retry after %s", err, b.NextBackOff())
 				return err
 			}
 
@@ -103,12 +104,6 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 	raft, err := NewRaft(c.Raft, c.DataDir, c.LogDir)
 	if err != nil {
 		return nil, err
-	}
-
-	if c.TickDuration == 0 {
-		c.TickDuration = DefaultTickDuration
-	} else {
-		c.TickDuration *= time.Millisecond
 	}
 
 	return &Server{
