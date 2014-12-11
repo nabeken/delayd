@@ -101,12 +101,6 @@ func mergeConfig(c *cli.Context) delayd.Config {
 		config.BootstrapExpect = c.Int("bootstrap-expect")
 	}
 
-	if config.TickDuration > 0 {
-		config.TickDuration *= time.Millisecond
-	} else {
-		config.TickDuration = delayd.DefaultTickDuration
-	}
-
 	return config
 }
 

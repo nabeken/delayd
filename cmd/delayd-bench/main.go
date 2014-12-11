@@ -15,11 +15,12 @@ import (
 )
 
 var (
+	flagConfig    = flag.String("c", "/etc/delayd.toml", "Specify a config. Default is /etc/delayd.toml")
+	flagProfile   = flag.String("p", "", "Specify a output file for cpu profiling.")
+	flagBroker    = flag.String("b", "amqp", "Specify a broker. Default is amqp.")
 	flagNumMsg    = flag.Int("n", 10, "Specify a number of messages to send")
 	flagNumServer = flag.Int("s", 3, "Specify a number of servers")
 	flagDuration  = flag.Duration("d", 1*time.Second, "Specify a delay. Default is 1s.")
-	flagConfig    = flag.String("c", "/etc/delayd.toml", "Specify a config. Default is /etc/delayd.toml")
-	flagProfile   = flag.String("p", "", "Specify a output file for cpu profiling.")
 	flagNoServer  = flag.Bool("no-server", false, "Set true if you need only client")
 )
 
@@ -39,6 +40,24 @@ func generateMessages(n int, d time.Duration) []testutil.Message {
 		}
 	}
 	return msgs
+}
+
+func getBroker(broker string, config delayd.Config) (testutil.Client, testutil.ServerFunc) {
+	switch broker {
+	case "amqp":
+		client, err := testutil.AMQPClientFunc(config, ioutil.Discard)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return client, testutil.AMQPServerFunc
+	case "sqs":
+		client, err := testutil.SQSClientFunc(config, ioutil.Discard)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return client, testutil.SQSServerFunc
+	}
+	panic("unknown broker")
 }
 
 func main() {
@@ -61,17 +80,13 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	client, err := testutil.AMQPClientFunc(config, ioutil.Discard)
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	client, sf := getBroker(*flagBroker, config)
 	if !*flagNoServer {
 		delayd.Info("launching servers and waiting for messages")
 		raftServers, err := testutil.RaftServers(
 			*flagNumServer,
 			raftHost,
-			testutil.AMQPServerFunc,
+			sf,
 		)(config)
 		if err != nil {
 			log.Fatal(err)

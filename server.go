@@ -67,6 +67,12 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 		log.SetOutput(logOutput)
 	}
 
+	if c.TickDuration > 0 {
+		c.TickDuration *= time.Millisecond
+	} else {
+		c.TickDuration = DefaultTickDuration
+	}
+
 	consul, err := NewConsul(c.Consul)
 	if err != nil {
 		return nil, err
