@@ -51,6 +51,10 @@ func getBroker(broker string, config delayd.Config) (testutil.Client, testutil.S
 		}
 		return client, testutil.AMQPServerFunc
 	case "sqs":
+		// TODO: Move to delayd.LoadConfig
+		if sqsQueue := os.Getenv("SQS_QUEUE_NAME"); sqsQueue != "" {
+			config.SQS.Queue = sqsQueue
+		}
 		client, err := testutil.SQSClientFunc(config, ioutil.Discard)
 		if err != nil {
 			log.Fatal(err)
