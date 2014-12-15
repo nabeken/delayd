@@ -385,10 +385,16 @@ func DoIntegration(t *testing.T, cf ClientFunc, sf ServersFunc) {
 		return
 	}
 
+	n := len(msgs)
+	acked := 0
 	var wg sync.WaitGroup
-	wg.Add(len(msgs))
+	wg.Add(n)
 	go func() {
 		for _ = range client.RecvLoop() {
+			acked++
+			if acked > n {
+				continue
+			}
 			wg.Done()
 		}
 	}()
@@ -398,6 +404,10 @@ func DoIntegration(t *testing.T, cf ClientFunc, sf ServersFunc) {
 
 	// shutdown consumer
 	client.Close()
+
+	if acked > n {
+		delayd.Infof("%d messages are duplicated", acked-n)
+	}
 
 	// remove all whitespace for a more reliable compare
 	f1 := strings.Trim(getFile("testdata/expected.txt"), "\n ")
