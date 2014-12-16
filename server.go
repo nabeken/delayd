@@ -36,6 +36,8 @@ const (
 // DefaultTickDuration is used by default configuration for ticker
 const DefaultTickDuration = 500 * time.Millisecond
 
+const numConcurrentSender = 100
+
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
 	bootstrapped bool
@@ -113,14 +115,15 @@ func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 	}
 
 	return &Server{
-		sender:     sender,
-		receiver:   receiver,
-		raft:       raft,
-		consul:     consul,
-		config:     c,
-		shutdownCh: make(chan bool),
-		serviceCh:  make(chan []*consulapi.ServiceEntry),
+		sender:   sender,
+		receiver: receiver,
+		raft:     raft,
+		consul:   consul,
+		config:   c,
+
 		eventCh:    make(chan *consulapi.UserEvent),
+		serviceCh:  make(chan []*consulapi.ServiceEntry),
+		shutdownCh: make(chan bool),
 		stopCh:     make(chan struct{}),
 		tickCh:     time.Tick(c.TickDuration),
 	}, nil
@@ -498,38 +501,52 @@ func (s *Server) timerSend(t time.Time) {
 		return
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(len(entries))
+
+	sem := make(chan struct{}, numConcurrentSender)
 	for i, e := range entries {
-		if err := s.sender.Send(e); err != nil {
-			if aerr, ok := err.(*amqp.Error); ok && aerr.Code == 504 {
-				// error 504 code means that the exchange we were trying
-				// to send on didnt exist.  In the case of delayd this usually
-				// means that a consumer didn't set up the exchange they wish
-				// to be notified on. We do not attempt to make this for them,
-				// as we don't know what exchange options they would want, we
-				// simply drop this message, other errors are fatal
-				Warnf("server: channel/connection not set up for exchange `%s`, message will be deleted: %s", e.Target, aerr)
-			}
-
-			// FIXME: I don't think Fatal here is right way.
-			// If a reason that node is failed to send is node specific,
-			// Fatal causes leader election then a problem may be resolved.
-			// If the reason is not node specific, all instance may be down....
-			Fatal("server: could not send entry:", err)
-		}
-
-		if err := s.raft.Remove(uuids[i], raftMaxTime); err != nil {
-			// This node is no longer the leader. give up on other amqp sends,
-			// and scheduling the next emission
-			Warnf("server: lost raft leadership during remove. AMQP send will be a duplicate. uuid=%x", uuids[i])
-			break
-		}
+		sem <- struct{}{}
+		go func(uuid []byte, e *Entry) {
+			s.handleSend(uuid, e)
+			<-sem
+			wg.Done()
+		}(uuids[i], e)
 	}
+
+	wg.Wait()
 
 	// ensure everyone is up to date
 	err = s.raft.SyncAll()
 	if err != nil {
 		Warn("server: lost raft leadership during sync after send.")
 		return
+	}
+}
+
+func (s *Server) handleSend(uuid []byte, e *Entry) {
+	if err := s.sender.Send(e); err != nil {
+		if aerr, ok := err.(*amqp.Error); ok && aerr.Code == 504 {
+			// error 504 code means that the exchange we were trying
+			// to send on didnt exist.  In the case of delayd this usually
+			// means that a consumer didn't set up the exchange they wish
+			// to be notified on. We do not attempt to make this for them,
+			// as we don't know what exchange options they would want, we
+			// simply drop this message, other errors are fatal
+			Warnf("server: channel/connection not set up for exchange `%s`, message will be deleted: %s", e.Target, aerr)
+		}
+
+		// FIXME: I don't think Fatal here is right way.
+		// If a reason that node is failed to send is node specific,
+		// Fatal causes leader election then a problem may be resolved.
+		// If the reason is not node specific, all instance may be down....
+		Fatal("server: could not send entry:", err)
+	}
+
+	if err := s.raft.Remove(uuid, raftMaxTime); err != nil {
+		// This node is no longer the leader. give up on other amqp sends,
+		// and scheduling the next emission
+		Warnf("server: lost raft leadership during remove. AMQP send will be a duplicate. uuid=%x", uuid)
 	}
 }
 
