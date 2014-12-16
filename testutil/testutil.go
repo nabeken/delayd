@@ -21,7 +21,7 @@ import (
 	"github.com/nabeken/delayd"
 )
 
-const numConcurrentSender = 100
+const numConcurrentSender = 1000
 
 // Message holds a message to send to delayd server for testing.
 type Message struct {

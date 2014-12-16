@@ -36,7 +36,7 @@ const (
 // DefaultTickDuration is used by default configuration for ticker
 const DefaultTickDuration = 500 * time.Millisecond
 
-const numConcurrentSender = 100
+const numConcurrentSender = 1000
 
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
