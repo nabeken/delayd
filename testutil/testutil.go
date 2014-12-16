@@ -21,6 +21,8 @@ import (
 	"github.com/nabeken/delayd"
 )
 
+const numConcurrentSender = 100
+
 // Message holds a message to send to delayd server for testing.
 type Message struct {
 	Value string
@@ -69,15 +71,27 @@ func NewSQSClient(target, config delayd.SQSConfig, s *sqs.SQS, out io.Writer) (*
 
 // SendMessages sends test messages to delayd queue.
 func (c *SQSClient) SendMessages(msgs []Message) error {
+	n := len(msgs)
+
+	var wg sync.WaitGroup
+	wg.Add(n)
+	sem := make(chan struct{}, numConcurrentSender)
 	for _, msg := range msgs {
-		attrs := map[string]string{
-			"delayd-delay":  strconv.FormatInt(msg.Delay, 10),
-			"delayd-target": c.Config.Queue,
-		}
-		if _, err := c.delaydQueue.SendMessageWithAttributes(msg.Value, attrs); err != nil {
-			return err
-		}
+		sem <- struct{}{}
+		go func(m Message) {
+			attrs := map[string]string{
+				"delayd-delay":  strconv.FormatInt(m.Delay, 10),
+				"delayd-target": c.Config.Queue,
+			}
+			if _, err := c.delaydQueue.SendMessageWithAttributes(m.Value, attrs); err != nil {
+				delayd.Error("failed to send a message:", err)
+			}
+			<-sem
+			wg.Done()
+		}(msg)
 	}
+
+	wg.Wait()
 	return nil
 }
 
