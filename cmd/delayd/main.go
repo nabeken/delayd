@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
@@ -116,6 +117,15 @@ func execute(c *cli.Context) {
 		delayd.Fatal(err)
 	}
 	installSigHandler(s)
+
+	if p := os.Getenv("DELAYD_CPU_PROFILE"); p != "" {
+		f, err := os.Create(p)
+		if err != nil {
+			delayd.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 
 	s.Run()
 }
