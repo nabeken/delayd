@@ -1,4 +1,4 @@
-FROM golang:1.3
+FROM golang:1.4
 MAINTAINER TANABE Ken-ichi <nabeken@tknetworks.org>
 
 RUN mkdir -p /go/src/app
