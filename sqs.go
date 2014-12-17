@@ -11,6 +11,8 @@ import (
 	"github.com/crowdmob/goamz/sqs"
 )
 
+const numPoller = 3
+
 // SQSConsumer represents general SQS consumer.
 type SQSConsumer struct {
 	Config   SQSConfig
@@ -33,7 +35,7 @@ func NewSQSConsumer(sc SQSConfig, s *sqs.SQS) (*SQSConsumer, error) {
 		Queue:  q,
 
 		paused:   true,
-		Messages: make(chan *sqs.Message, sc.MaxNumberOfMessages),
+		Messages: make(chan *sqs.Message, sc.MaxNumberOfMessages*numPoller),
 		shutdown: make(chan struct{}),
 	}
 
@@ -74,7 +76,9 @@ func (c *SQSConsumer) Start() error {
 
 	c.paused = false
 
-	go c.poll()
+	for i := 0; i < numPoller; i++ {
+		go c.poll()
+	}
 	return nil
 }
 
