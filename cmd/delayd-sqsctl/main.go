@@ -19,7 +19,7 @@ func execute(c *cli.Context) {
 	}
 
 	// override configuration by envvars
-	if sqsQueue := os.Getenv("SQS_QUEUE_NAME"); sqsQueue != "" {
+	if sqsQueue := os.Getenv("DELAYD_SQS_QUEUE_NAME"); sqsQueue != "" {
 		config.SQS.Queue = sqsQueue
 	}
 

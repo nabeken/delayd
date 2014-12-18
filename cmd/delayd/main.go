@@ -68,7 +68,7 @@ func mergeConfig(c *cli.Context) delayd.Config {
 		config.Raft.Peers = strings.Split(peers, ",")
 	}
 
-	if sqsQueue := os.Getenv("SQS_QUEUE_NAME"); sqsQueue != "" {
+	if sqsQueue := os.Getenv("DELAYD_SQS_QUEUE_NAME"); sqsQueue != "" {
 		config.SQS.Queue = sqsQueue
 	}
 

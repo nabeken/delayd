@@ -4,9 +4,9 @@ delayd:
     AMQP_URL: "amqp://rabbitmq"
     AWS_ACCESS_KEY_ID:
     AWS_SECRET_ACCESS_KEY:
+    DELAYD_SQS_QUEUE_NAME:
     RAFT_HOSTS:
     RAFT_PEERS:
-    SQS_QUEUE_NAME:
   links:
     - rabbitmq
   command: delayd server -single -broker sqs
