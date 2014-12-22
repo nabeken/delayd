@@ -222,7 +222,12 @@ func (s *SQSSender) Send(e *Entry) error {
 		s.addQueue(e.Target, q)
 	}
 
-	_, err := s.queues[e.Target].SendMessage(string(e.Body))
+	// Use x-delayd-date to distinguish whether a messsage comes from delayd or not.
+	attrs := map[string]string{
+		"x-delayd-date": time.Now().Format(time.RFC1123Z),
+	}
+
+	_, err := s.queues[e.Target].SendMessageWithAttributes(string(e.Body), attrs)
 	return err
 }
 
