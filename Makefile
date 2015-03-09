@@ -79,3 +79,14 @@ funccov:
 	go tool cover -func /tmp/delayd-coverprof.cov
 
 ci: config check test test_amqp test_amqp_consul
+
+release-builder:
+	docker pull golang:1.4
+	docker pull debian:jessie
+	docker build --no-cache -t nabeken/delayd:release-build .
+
+# Need Docker 1.5 or later
+release:
+	-rm -rf bin
+	docker run -it --rm nabeken/delayd:release-build sh -c 'tar -C /go -cf - bin | base64' | openssl enc -d -base64 | tar -xvf -
+	docker build -f Dockerfile.release -t nabeken/delayd:dev .
