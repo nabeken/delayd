@@ -89,4 +89,4 @@ release-builder:
 release:
 	-rm -rf bin
 	docker run -it --rm nabeken/delayd:release-build sh -c 'tar -C /go -cf - bin | base64' | openssl enc -d -base64 | tar -xvf -
-	docker build -f Dockerfile.release -t nabeken/delayd:dev .
+	docker build -f Dockerfile.release -t nabeken/delayd-release:latest .
