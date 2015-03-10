@@ -3,6 +3,8 @@
 FROM debian:jessie
 MAINTAINER TANABE Ken-ichi <nabeken@tknetworks.org>
 
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
+
 ADD bin /usr/local/bin/
 
 ADD delayd.toml.docker /etc/delayd.toml
