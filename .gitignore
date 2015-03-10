@@ -3,3 +3,4 @@ coverage.out
 .DS_Store
 delayd.toml
 delayd.toml.local
+/bin/

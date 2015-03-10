@@ -1,0 +1,14 @@
+# vim: set ft=dockerfile
+# golang:1.4 is based on debian:jessie
+FROM debian:jessie
+MAINTAINER TANABE Ken-ichi <nabeken@tknetworks.org>
+
+ADD bin /usr/local/bin/
+
+ADD delayd.toml.docker /etc/delayd.toml
+RUN useradd -m delayd && \
+    install -o delayd -g delayd -m 0700 -d /var/lib/delayd
+
+VOLUME ["/var/lib/delayd"]
+
+USER delayd
