@@ -83,6 +83,7 @@ ci: config check test test_amqp test_amqp_consul
 release-builder:
 	docker pull golang:1.4
 	docker pull debian:jessie
+	docker pull nabeken/delayd:latest
 	docker build --no-cache -t nabeken/delayd:release-build .
 
 # Need Docker 1.5 or later
