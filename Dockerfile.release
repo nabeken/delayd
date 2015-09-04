@@ -1,5 +1,5 @@
 # vim: set ft=dockerfile
-# golang:1.4 is based on debian:jessie
+# golang:1.5 is based on debian:jessie
 FROM debian:jessie
 MAINTAINER TANABE Ken-ichi <nabeken@tknetworks.org>
 
