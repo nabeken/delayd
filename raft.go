@@ -226,20 +226,16 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 
 	if c.Single {
 		// Ensure that local host is included
-		c.Peers = append(c.Peers, transport.LocalAddr().String())
+		c.Peers = append(c.Peers, transport.LocalAddr())
 	}
 
 	peerStore := raft.NewJSONPeers(raftDir, transport)
-	for _, peerStr := range c.Peers {
+	for _, peer := range c.Peers {
 		peers, err := peerStore.Peers()
 		if err != nil {
 			return nil, err
 		}
 
-		peer, err := net.ResolveTCPAddr("tcp", peerStr)
-		if err != nil {
-			Fatal("raft: bad peer:", err)
-		}
 		if !raft.PeerContained(peers, peer) {
 			if err := peerStore.SetPeers(raft.AddUniquePeer(peers, peer)); err != nil {
 				Fatal("raft: bad peer:", err)

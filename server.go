@@ -279,7 +279,7 @@ func (s *Server) observeShutdownSignal() {
 			event := s.consul.Event()
 			ue := &consulapi.UserEvent{
 				Name:          delaydEvent,
-				Payload:       []byte(delaydLeaveEvent + s.localAddr().String()),
+				Payload:       []byte(delaydLeaveEvent + s.localAddr()),
 				ServiceFilter: delaydService,
 			}
 			if _, _, err := event.Fire(ue, nil); err != nil {
@@ -315,12 +315,12 @@ func (s *Server) observeMembership() {
 				}
 
 				// reject if peer is pointing to self
-				if peer.String() == s.localAddr().String() {
+				if peer.String() == s.localAddr() {
 					Error("server: reject leave-event because it asks the leader to remove itself")
 					continue
 				}
 
-				if err := s.raft.raft.RemovePeer(peer).Error(); err != nil {
+				if err := s.raft.raft.RemovePeer(peer.String()).Error(); err != nil {
 					Errorf("server: failed to remove %s from peerset: %s", peer, err)
 					continue
 				}
@@ -550,20 +550,16 @@ func (s *Server) handleSend(uuid []byte, e *Entry) {
 	}
 }
 
-func (s *Server) localAddr() net.Addr {
+func (s *Server) localAddr() string {
 	return s.raft.transport.LocalAddr()
 }
 
-func convertPeersFromService(services []*consulapi.ServiceEntry) []net.Addr {
-	peers := []net.Addr{}
+func convertPeersFromService(services []*consulapi.ServiceEntry) []string {
+	peers := []string{}
 	for _, service := range services {
 		port := strconv.FormatInt(int64(service.Service.Port), 10)
 		address := service.Node.Address
-		peer, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(address, port))
-		if err != nil {
-			Fatal("server: bad peer:", err)
-		}
-		peers = append(peers, peer)
+		peers = append(peers, net.JoinHostPort(address, port))
 	}
 	return peers
 }
