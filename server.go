@@ -58,6 +58,12 @@ type Server struct {
 	leader bool
 }
 
+func (s *Server) getLeader() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.leader
+}
+
 // NewServer initialize Server instance.
 func NewServer(c Config, sender Sender, receiver Receiver) (*Server, error) {
 	if len(c.LogDir) != 0 {
@@ -269,7 +275,7 @@ func (s *Server) observeShutdownSignal() {
 		return
 	case <-graceful:
 		Info("server: received signal to leave gracefully")
-		if s.leader {
+		if s.getLeader() {
 			Infof("server: removing myself %v from peerset", s.localAddr())
 			if err := s.raft.raft.RemovePeer(s.localAddr()).Error(); err != nil {
 				Error("failed to remove myself from peerset:", err)
@@ -279,7 +285,7 @@ func (s *Server) observeShutdownSignal() {
 			event := s.consul.Event()
 			ue := &consulapi.UserEvent{
 				Name:          delaydEvent,
-				Payload:       []byte(delaydLeaveEvent + s.localAddr().String()),
+				Payload:       []byte(delaydLeaveEvent + s.localAddr()),
 				ServiceFilter: delaydService,
 			}
 			if _, _, err := event.Fire(ue, nil); err != nil {
@@ -300,7 +306,7 @@ func (s *Server) observeMembership() {
 		case <-s.shutdownCh:
 			return
 		case e := <-s.eventCh:
-			if !s.leader {
+			if !s.getLeader() {
 				continue
 			}
 
@@ -315,12 +321,12 @@ func (s *Server) observeMembership() {
 				}
 
 				// reject if peer is pointing to self
-				if peer.String() == s.localAddr().String() {
+				if peer.String() == s.localAddr() {
 					Error("server: reject leave-event because it asks the leader to remove itself")
 					continue
 				}
 
-				if err := s.raft.raft.RemovePeer(peer).Error(); err != nil {
+				if err := s.raft.raft.RemovePeer(peer.String()).Error(); err != nil {
 					Errorf("server: failed to remove %s from peerset: %s", peer, err)
 					continue
 				}
@@ -339,7 +345,7 @@ func (s *Server) observeMembership() {
 			}
 
 			// leader needs to maintain peers in response to service changes after bootstraped.
-			if !s.leader {
+			if !s.getLeader() {
 				continue
 			}
 
@@ -483,7 +489,7 @@ func (s *Server) tickerLoop() {
 			Info("server: ticker: receiving shutdown signal. existing.")
 			return
 		case sendTime := <-s.tickCh:
-			if s.leader {
+			if s.getLeader() {
 				s.timerSend(sendTime)
 			}
 		}
@@ -550,20 +556,16 @@ func (s *Server) handleSend(uuid []byte, e *Entry) {
 	}
 }
 
-func (s *Server) localAddr() net.Addr {
+func (s *Server) localAddr() string {
 	return s.raft.transport.LocalAddr()
 }
 
-func convertPeersFromService(services []*consulapi.ServiceEntry) []net.Addr {
-	peers := []net.Addr{}
+func convertPeersFromService(services []*consulapi.ServiceEntry) []string {
+	peers := []string{}
 	for _, service := range services {
 		port := strconv.FormatInt(int64(service.Service.Port), 10)
 		address := service.Node.Address
-		peer, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(address, port))
-		if err != nil {
-			Fatal("server: bad peer:", err)
-		}
-		peers = append(peers, peer)
+		peers = append(peers, net.JoinHostPort(address, port))
 	}
 	return peers
 }

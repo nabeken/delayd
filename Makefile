@@ -29,19 +29,19 @@ update-deps:
 
 
 test:
-	go test -v -short -timeout=1s ./...
+	go test -race -short -timeout=1s ./...
 
 test_amqp:
-	go test ./cmd/delayd/ -v -timeout=60s -amqp
+	go test ./cmd/delayd/ -race -timeout=60s -amqp
 
 test_amqp_consul:
-	go test ./cmd/delayd/ -run='TestAMQP_Multiple' -v -timeout=120s -amqp -consul
+	go test ./cmd/delayd/ -run='TestAMQP_Multiple' -race -timeout=120s -amqp -consul
 
 test_sqs:
-	go test ./cmd/delayd/ -v -timeout=60s -sqs
+	go test ./cmd/delayd/ -race -timeout=60s -sqs
 
 test_sqs_consul:
-	go test ./cmd/delayd/ -run='TestSQS_Multiple' -v -timeout=120s -sqs -consul
+	go test ./cmd/delayd/ -run='TestSQS_Multiple' -race -timeout=120s -sqs -consul
 
 check: lint
 	gofmt -l .
@@ -83,6 +83,7 @@ ci: config check test test_amqp test_amqp_consul
 release-builder:
 	docker pull golang:1.4
 	docker pull debian:jessie
+	docker pull nabeken/delayd:latest
 	docker build --no-cache -t nabeken/delayd:release-build .
 
 # Need Docker 1.5 or later
