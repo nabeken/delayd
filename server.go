@@ -54,14 +54,14 @@ type Server struct {
 	stopCh     chan struct{}
 	tickCh     <-chan time.Time
 
-	mu      sync.Mutex
-	leader_ bool
+	mu     sync.Mutex
+	leader bool
 }
 
-func (s *Server) leader() bool {
+func (s *Server) getLeader() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.leader_
+	return s.leader
 }
 
 // NewServer initialize Server instance.
@@ -275,7 +275,7 @@ func (s *Server) observeShutdownSignal() {
 		return
 	case <-graceful:
 		Info("server: received signal to leave gracefully")
-		if s.leader() {
+		if s.getLeader() {
 			Infof("server: removing myself %v from peerset", s.localAddr())
 			if err := s.raft.raft.RemovePeer(s.localAddr()).Error(); err != nil {
 				Error("failed to remove myself from peerset:", err)
@@ -306,7 +306,7 @@ func (s *Server) observeMembership() {
 		case <-s.shutdownCh:
 			return
 		case e := <-s.eventCh:
-			if !s.leader() {
+			if !s.getLeader() {
 				continue
 			}
 
@@ -345,7 +345,7 @@ func (s *Server) observeMembership() {
 			}
 
 			// leader needs to maintain peers in response to service changes after bootstraped.
-			if !s.leader() {
+			if !s.getLeader() {
 				continue
 			}
 
@@ -465,7 +465,7 @@ func (s *Server) observeServiceChanges() {
 func (s *Server) observeLeaderChanges() {
 	for isLeader := range s.raft.LeaderCh() {
 		s.mu.Lock()
-		s.leader_ = isLeader
+		s.leader = isLeader
 		s.mu.Unlock()
 
 		if isLeader {
@@ -489,7 +489,7 @@ func (s *Server) tickerLoop() {
 			Info("server: ticker: receiving shutdown signal. existing.")
 			return
 		case sendTime := <-s.tickCh:
-			if s.leader() {
+			if s.getLeader() {
 				s.timerSend(sendTime)
 			}
 		}
